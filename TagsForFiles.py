@@ -429,10 +429,10 @@ def export(t4f_data=None):
     if t4f_data is None:
         t4f_data = _tags4files
     now = datetime.datetime.now()
-    nowfile = f"tags-{now.year}-{now.month:02d}-{now.day:02d}-{now.hour:02d}-{now.minute:02d}-{now.second:02d}.txt"
+    now_file = f"tags-{now.year}-{now.month:02d}-{now.day:02d}-{now.hour:02d}-{now.minute:02d}-{now.second:02d}.txt"
 
-    write_to_file(t4f_data, nowfile)
-    print(f'Results written to {nowfile}')
+    write_to_file(t4f_data, now_file)
+    print(f'Results written to {now_file}')
 
 
 def find_matching(term, t4f_data=None):
@@ -586,8 +586,8 @@ def move_if_tagged(ttag, ddir, t4f=None):
         pass
     for f in t4f['files']:
         if ttag in f['tags']:
-            dir = os.path.dirname(f['path']).split('\\')[-1]
-            if dir != ddir:
+            file_dir = os.path.dirname(f['path']).split('\\')[-1]
+            if file_dir != ddir:
                 to_move.append(f)
                 pass
             pass
@@ -654,7 +654,7 @@ def archive(t4f=None):
 # - Every subsequent non-blank line contains tags, each separated by 1 or more spaces.
 # - A tag in the form '<k>=<v>' where k and v are both valid strings is considered
 #   to be a variable, with the name k and the value v.
-# - Records are separated by one or more blank lines.
+# - Complete records are separated by one or more blank lines.
 import_text_data_from_file(_tags4files, "tags.txt")
 pp = pprint.PrettyPrinter(indent=2)
 
