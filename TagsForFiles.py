@@ -12,12 +12,16 @@ import shutil
 import sys
 from tinytag import TinyTag
 import tinytag
+import PySimpleGUI as sg
 
-cwd = os.getcwd()  # Current directory
-sys.path.append(cwd)
+# TODO: Change this to a directory specified by the user
+main_data_directory = os.getcwd()
+sys.path.append(main_data_directory)
 
 # Where to store the durable database
-_data_file_name = "tags4files.pickle"
+# TODO: Prefix this with the data directory
+pickle_file_path = os.path.join(main_data_directory, "tags4files.pickle")
+print(f'pickle_file_path = {pickle_file_path}')
 
 
 def create_t4f_data():
@@ -33,10 +37,12 @@ def create_t4f_data():
 _tags4files = create_t4f_data()
 
 
-def save_t4f_data_to_pickle(t4f_data=None, filename=_data_file_name):
+def save_t4f_data_to_pickle(t4f_data=None, filename=None):
     """Write data to the pickle file"""
     if t4f_data is None:
         t4f_data = _tags4files
+    if filename is None:
+        filename = pickle_file_path
     pickle_file = open(filename, "wb")
     pickle.dump(t4f_data, pickle_file)
     pickle_file.close()
@@ -48,16 +54,20 @@ def save():
     pass
 
 
-def load_t4f_data_from_pickle(filename=_data_file_name):
+def load_t4f_data_from_pickle(filename=None):
     """Read data from the pickle file"""
+    if filename is None:
+        filename=pickle_file_path
     pickle_file = open(filename, "rb")
     t4f_data = pickle.load(pickle_file)
     pickle_file.close()
     return t4f_data
 
 
-def create_or_load_t4f_data_from_pickle(filename=_data_file_name):
+def create_or_load_t4f_data_from_pickle(filename=None):
     """Load the data file if it exists, otherwise create it and save it out."""
+    if filename is None:
+        filename = pickle_file_path
     file_exists = exists(filename)
     if file_exists:
         t4f_data = load_t4f_data_from_pickle(filename)
@@ -329,7 +339,7 @@ def find_untracked(extensions=None, t4f_data=None):
     for f in t4f_data['files']:
         known_files.add(f['path'])
 
-    gen = os.walk(cwd)
+    gen = os.walk(main_data_directory)
     for rec in gen:
         dir_path = rec[0]
         dir_names = rec[1]
@@ -676,6 +686,8 @@ pp.pprint(possible_dupes)
 print()
 
 export()
+
+
 find_untracked(video_extensions)
 
 number_top = 20
@@ -696,3 +708,24 @@ print('Use `extract_all_tags()` to pull tags out of embedded metadata.')
 print('Use `delete()` to move files marked with the `to-delete` tag to `.trash`')
 print('Use `favorite()` to move files marked with the `move-to-favorites` tag to `.favorites`')
 print('Use `archive()` to move files marked with the `to-archive` tag to `.archive`')
+
+# PySimpleGui core
+layout = [[sg.Text("What's your name?")],
+          [sg.Input(key='-INPUT-')],
+          [sg.Text(size=(40,1), key='-OUTPUT-')],
+          [sg.Button('Ok'), sg.Button('Quit')]]
+
+# Create the window
+window = sg.Window('Tags For Files', layout)
+
+# Display and interact with the Window using an Event Loop
+while True:
+    event, values = window.read()
+    # See if user wants to quit or window was closed
+    if event == sg.WINDOW_CLOSED or event == 'Quit':
+        break
+    # Output a message to the window
+    window['-OUTPUT-'].update('Hello ' + values['-INPUT-'] + "! Thanks for trying PySimpleGUI")
+
+# Finish up by removing from the screen
+window.close()
