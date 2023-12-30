@@ -363,7 +363,7 @@ def find_untracked(extensions=None, t4f_data=None):
         t4f_data = _tags4files
     if extensions is None:
         extensions = audio_extensions
-    untracked_files = []
+    untracked_files_list = []
     known_files = set()
 
     found_extensions = set()
@@ -390,15 +390,15 @@ def find_untracked(extensions=None, t4f_data=None):
 
             path = os.path.join(dir_path, filename)
             if path not in known_files:
-                untracked_files.append(path)
+                untracked_files_list.append(path)
                 pass
             pass
         pass
     filename = make_time_stamped_file_name('untracked', 'm3u')
     f = open(filename, "w", encoding="utf-8")
-    print('\n\n'.join(untracked_files), file=f)
+    print('\n\n'.join(untracked_files_list), file=f)
     f.close()
-    print(f'Wrote {len(untracked_files)} untracked files to {filename}')
+    print(f'Wrote {len(untracked_files_list)} untracked files to {filename}')
     print(f'Other extensions = {found_extensions}')
 
 
@@ -470,7 +470,7 @@ def top_rated_m3u(limit=0, t4f_data=None):
 
 
 def export(t4f_data=None):
-    """Write tags4files out to a .txt file"""
+    """Write data out to a .txt file"""
     if t4f_data is None:
         t4f_data = _tags4files
 
@@ -740,11 +740,6 @@ export()
 
 find_untracked(video_extensions)
 
-# number_top = 20
-# print(f'Top {number_top} tags:')
-# pp.pprint(sorted(count_tags(), key=lambda x: x[1], reverse=True)[0:number_top])
-# print()
-
 print('Use `export()` to write to a text file tags list')
 print('Use `save() to write to a pickle file')
 print('Use `find_matching(term) to find file names which match a search term')
@@ -763,7 +758,7 @@ print('Use `archive()` to move files marked with the `to-archive` tag to `.archi
 files_list = [f['path'] for f in _tags4files['files']]
 tag_list = list(_tags4files['tags'])
 tag_list.sort()
-layout = [
+files_and_tags_window_layout = [
     [sg.Text(f'Base directory: {main_data_directory} | {len(files_list)} files | {len(tag_list)} tags')],
     [sg.HorizontalSeparator()],
 
@@ -811,7 +806,7 @@ layout = [
     [
         sg.Button('Export entire file list', key='EXPORT-BUTTON', ),
         sg.Button('Make a playlist of selected files', key='PLAYLIST-BUTTON', ),
-        sg.Text(size=(90, 1), key='FILE_OP_STATUS'),
+        sg.InputText(size=(90, 1), key='FILE_OP_STATUS', use_readonly_for_disable=True, disabled=True),
     ],
     [sg.HorizontalSeparator()],
     [sg.Button('Quit')]
@@ -831,8 +826,8 @@ def select_files_from_tags(window):
 
 
 def select_tags_from_files(window):
-    files_list = window['-FILES-LISTBOX-'].get()
-    tags_list = list(get_tags_from_files(files_list))
+    selected_files_list = window['-FILES-LISTBOX-'].get()
+    tags_list = list(get_tags_from_files(selected_files_list))
     if tags_list is None:
         tags_list = []
     if window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
@@ -851,20 +846,20 @@ def update_selection_display(window):
 def update_tags_sort_order(window):
     sort_order = window['TAGS-DROPDOWN-SORT'].get()
     selected = window['-TAGS-LISTBOX-'].get()
-    tag_list = []
+    tags_list = []
 
     if sort_order is 'Alpha':
-        tag_list = list(_tags4files['tags'])
-        tag_list.sort()
+        tags_list = list(_tags4files['tags'])
+        tags_list.sort()
     elif sort_order is 'Selected':
-        tag_list = list(_tags4files['tags'])
-        augmented_tag_list = [(t, t in selected) for t in tag_list]
+        tags_list = list(_tags4files['tags'])
+        augmented_tag_list = [(t, t in selected) for t in tags_list]
         sorted_tag_list = sorted(augmented_tag_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
-        tag_list = [t[0] for t in sorted_tag_list]
+        tags_list = [t[0] for t in sorted_tag_list]
     elif sort_order is 'Frequency':
-        tag_list = [item[0] for item in count_tags()]
+        tags_list = [item[0] for item in count_tags()]
 
-    window['-TAGS-LISTBOX-'].update(tag_list)
+    window['-TAGS-LISTBOX-'].update(tags_list)
     window['-TAGS-LISTBOX-'].set_value(selected)
     update_selection_display(window)
 
@@ -918,40 +913,40 @@ def do_find(window):
 
 
 # Create the window
-window = sg.Window('Tags For Files', layout)
+files_and_tags_window = sg.Window('Tags For Files', files_and_tags_window_layout)
 
 # EVENT LOOP:
 # Display and interact with the Window using an Event Loop
 while True:
-    event, values = window.read()
-    print(event,values)
+    event, values = files_and_tags_window.read()
+    print(event, values)
     # See if user wants to quit or window was closed
     if event == sg.WINDOW_CLOSED or event == 'Quit':
         break
     elif event == '-FILES-LISTBOX-' or event == '-TAGS-LISTBOX-':
-        update_selection_display(window)
+        update_selection_display(files_and_tags_window)
     elif event == '-CLEAR-FILES-':
-        window['-FILES-LISTBOX-'].set_value([])
-        update_selection_display(window)
+        files_and_tags_window['-FILES-LISTBOX-'].set_value([])
+        update_selection_display(files_and_tags_window)
     elif event == '-CLEAR-TAGS-':
-        window['-TAGS-LISTBOX-'].set_value([])
-        update_selection_display(window)
+        files_and_tags_window['-TAGS-LISTBOX-'].set_value([])
+        update_selection_display(files_and_tags_window)
     elif event == 'SELECT-FILES-FROM-TAGS':
-        select_files_from_tags(window)
-        update_selection_display(window)
+        select_files_from_tags(files_and_tags_window)
+        update_selection_display(files_and_tags_window)
     elif event == 'SELECT-TAGS-FROM-FILES':
-        select_tags_from_files(window)
-        update_selection_display(window)
+        select_tags_from_files(files_and_tags_window)
+        update_selection_display(files_and_tags_window)
     elif event == 'TAGS-DROPDOWN-SORT':
-        update_tags_sort_order(window)
+        update_tags_sort_order(files_and_tags_window)
     elif event == 'FILES-DROPDOWN-SORT':
-        update_files_sort_order(window)
+        update_files_sort_order(files_and_tags_window)
     elif event == 'EXPORT-BUTTON':
-        do_export(window)
+        do_export(files_and_tags_window)
     elif event == 'PLAYLIST-BUTTON':
-        do_make_playlist(window)
+        do_make_playlist(files_and_tags_window)
     elif event == 'FIND-BUTTON':
-        do_find(window)
+        do_find(files_and_tags_window)
 
 # Finish up by removing from the screen
-window.close()
+files_and_tags_window.close()
