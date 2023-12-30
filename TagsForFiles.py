@@ -767,7 +767,12 @@ layout = [
     [sg.Text(f'Base directory: {main_data_directory} | {len(files_list)} files | {len(tag_list)} tags')],
     [sg.HorizontalSeparator()],
 
-    [sg.Column([[sg.Text('ALL FILES:')],
+    [sg.Column([[sg.Text('ALL FILES:'),
+                 sg.DropDown(values=['Alpha', 'Selected'],
+                             default_value='Alpha',
+                             enable_events=True,
+                             readonly=True,
+                             size=30, key='FILES-DROPDOWN-SORT')],
                 [sg.Listbox(values=files_list,
                             size=(100, 20),
                             key='-FILES-LISTBOX-',
@@ -864,6 +869,23 @@ def update_tags_sort_order(window):
     update_selection_display(window)
 
 
+def update_files_sort_order(window):
+    sort_order = window['FILES-DROPDOWN-SORT'].get()
+    selected = window['-FILES-LISTBOX-'].get()
+    file_list = []
+    if sort_order is 'Alpha':
+        file_list = [f['path'] for f in _tags4files['files']]
+        file_list.sort()
+    elif sort_order is 'Selected':
+        file_list = [f['path'] for f in _tags4files['files']]
+        augmented_file_list = [(f, f in selected) for f in file_list]
+        sorted_file_list = sorted(augmented_file_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
+        file_list = [f[0] for f in sorted_file_list]
+    window['-FILES-LISTBOX-'].update(file_list)
+    window['-FILES-LISTBOX-'].set_value(selected)
+    update_selection_display(window)
+
+
 def do_export(window):
     window['FILE_OP_STATUS'].update('Writing export file')
     file_name = export()
@@ -902,7 +924,7 @@ window = sg.Window('Tags For Files', layout)
 # Display and interact with the Window using an Event Loop
 while True:
     event, values = window.read()
-    print(event, values)
+    print(event,values)
     # See if user wants to quit or window was closed
     if event == sg.WINDOW_CLOSED or event == 'Quit':
         break
@@ -922,6 +944,8 @@ while True:
         update_selection_display(window)
     elif event == 'TAGS-DROPDOWN-SORT':
         update_tags_sort_order(window)
+    elif event == 'FILES-DROPDOWN-SORT':
+        update_files_sort_order(window)
     elif event == 'EXPORT-BUTTON':
         do_export(window)
     elif event == 'PLAYLIST-BUTTON':
