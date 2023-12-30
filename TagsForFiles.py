@@ -478,6 +478,7 @@ def export(t4f_data=None):
 
     write_to_file(t4f_data, now_file)
     print(f'Results written to {now_file}')
+    return now_file
 
 
 def find_matching(term, t4f_data=None):
@@ -754,7 +755,7 @@ layout = [
     [sg.HorizontalSeparator()],
     [sg.Text('ALL FILES:')],
     [sg.Listbox(values=files_list,
-                size=(120, 20),
+                size=(120, 15),
                 key='-FILES-LISTBOX-',
                 select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
                 enable_events=True,
@@ -768,7 +769,7 @@ layout = [
                     size=30, key='TAGS-DROPDOWN-SORT')
     ],
     [sg.Listbox(values=tag_list,
-                size=(45, 10),
+                size=(45, 8),
                 key='-TAGS-LISTBOX-',
                 select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
                 enable_events=True,
@@ -788,6 +789,14 @@ layout = [
         sg.DropDown(values=['Replace', 'Expand'], default_value='Replace', readonly=True,
                     tooltip='Replace current selection or expand it', size=30,
                     key='REPLACE-OR-EXPAND-SELECTION')
+    ],
+    [
+        sg.Button('Export entire file list', key='EXPORT-BUTTON', ),
+        sg.Text(size=(90, 1), key='EXPORT-STATUS'),
+    ],
+    [
+        sg.Button('Make a playlist of selected files', key='PLAYLIST-BUTTON', ),
+        sg.Text(size=(90, 1), key='PLAYLIST-STATUS'),
     ],
     [sg.HorizontalSeparator()],
     [sg.Button('Quit')]
@@ -840,6 +849,24 @@ def update_tags_sort_order(window):
     update_selection_display(window)
 
 
+def do_export(window):
+    window['EXPORT-STATUS'].update('Writing export file')
+    file_name = export()
+    window['EXPORT-STATUS'].update(f'Wrote {file_name}')
+
+
+def do_make_playlist(window):
+    window['PLAYLIST-STATUS'].update('Writing m3u file')
+    files_list = window['-FILES-LISTBOX-'].get()
+    filename = make_time_stamped_file_name('playlist', 'm3u')
+    f = open(filename, 'w', encoding='utf-8')
+    print('\n'.join(files_list), file=f)
+    f.close()
+    status_message = f'Wrote {len(files_list)} files to {filename}'
+    print(status_message)
+    window['PLAYLIST-STATUS'].update(status_message)
+
+
 # Create the window
 window = sg.Window('Tags For Files', layout)
 
@@ -866,6 +893,10 @@ while True:
         update_selection_display(window)
     elif event == 'TAGS-DROPDOWN-SORT':
         update_tags_sort_order(window)
+    elif event == 'EXPORT-BUTTON':
+        do_export(window)
+    elif event == 'PLAYLIST-BUTTON':
+        do_make_playlist(window)
 
 # Finish up by removing from the screen
 window.close()
