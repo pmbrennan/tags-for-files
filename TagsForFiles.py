@@ -898,6 +898,7 @@ def do_find(window):
 # Create the window
 window = sg.Window('Tags For Files', layout)
 
+# EVENT LOOP:
 # Display and interact with the Window using an Event Loop
 while True:
     event, values = window.read()
