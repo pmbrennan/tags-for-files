@@ -3,18 +3,21 @@
 
 import argparse
 import datetime
-import os
-from os.path import exists
-from os.path import basename
 import operator
+import os
 import pickle
 import pprint
 import shutil
 import sys
-from tinytag import TinyTag
-import tinytag
-import PySimpleGUI as sg
+from os.path import basename
+from os.path import exists
 
+import PySimpleGUI as sg
+import tinytag
+from tinytag import TinyTag
+
+# **********************************************************************
+# Parse arguments and set up primary data structures
 parser = argparse.ArgumentParser('TagsForFiles')
 parser.add_argument('base',
                     help='Base directory for data',
@@ -31,11 +34,14 @@ pickle_file_path = os.path.join(main_data_directory, "tags4files.pickle")
 pickle_file_path = os.path.abspath(pickle_file_path)
 print(f'pickle_file_path = {pickle_file_path}')
 
+# Where to store the compatible database
 text_file_path = os.path.join(main_data_directory, "tags.txt")
 text_file_path = os.path.abspath(text_file_path)
 print(f'text_file_path = {text_file_path}')
 
 
+# **********************************************************************
+# Top-level internal data structure
 def create_t4f_data():
     """Create and return the base data structure"""
     data = {
@@ -191,6 +197,8 @@ def build_tagged_files_map(t4f, only_existing=False):
 
 def get_matching_tagged_files(tags, t4f=None, only_existing=False):
     """Return a set of files which match all the given tags"""
+    if tags is None or len(tags) == 0:
+        return []
     if t4f is None:
         t4f = _tags4files
     tagged_files_map = build_tagged_files_map(t4f, only_existing)
@@ -209,6 +217,18 @@ def get_matching_tagged_files(tags, t4f=None, only_existing=False):
         else:
             out = out.intersection(s)
     return out
+
+
+def get_tags_from_files(files, t4f=None):
+    """Return a list of tags which match the given files"""
+    tags = set()
+    if t4f is None:
+        t4f = _tags4files
+    for f in t4f['files']:
+        if f['path'] in files:
+            for tag in f['tags']:
+                tags.add(tag)
+    return list(tags)
 
 
 def get_missing_files(t4f=None):
@@ -705,10 +725,10 @@ export()
 
 find_untracked(video_extensions)
 
-number_top = 20
-print(f'Top {number_top} tags:')
-pp.pprint(sorted(count_tags(), key=lambda x: x[1], reverse=True)[0:number_top])
-print()
+# number_top = 20
+# print(f'Top {number_top} tags:')
+# pp.pprint(sorted(count_tags(), key=lambda x: x[1], reverse=True)[0:number_top])
+# print()
 
 print('Use `export()` to write to a text file tags list')
 print('Use `save() to write to a pickle file')
@@ -725,10 +745,100 @@ print('Use `favorite()` to move files marked with the `move-to-favorites` tag to
 print('Use `archive()` to move files marked with the `to-archive` tag to `.archive`')
 
 # PySimpleGui core
-layout = [[sg.Text("What's your name?")],
-          [sg.Input(key='-INPUT-')],
-          [sg.Text(size=(40, 1), key='-OUTPUT-')],
-          [sg.Button('Ok'), sg.Button('Quit')]]
+files_list = [f['path'] for f in _tags4files['files']]
+tag_list = list(_tags4files['tags'])
+tag_list.sort()
+layout = [
+    [sg.Text(f'Base directory: {main_data_directory}')],
+    [sg.Text(f"{len(files_list)} files | {len(tag_list)} tags")],
+    [sg.HorizontalSeparator()],
+    [sg.Text('ALL FILES:')],
+    [sg.Listbox(values=files_list,
+                size=(120, 20),
+                key='-FILES-LISTBOX-',
+                select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
+                enable_events=True,
+                horizontal_scroll=True)],
+    [
+        sg.Text('ALL TAGS:'),
+        sg.DropDown(values=['Alpha', 'Frequency'],
+                    default_value='Alpha',
+                    enable_events=True,
+                    readonly=True,
+                    size=30, key='TAGS-DROPDOWN-SORT')
+    ],
+    [sg.Listbox(values=tag_list,
+                size=(45, 10),
+                key='-TAGS-LISTBOX-',
+                select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
+                enable_events=True,
+                horizontal_scroll=True)],
+    [sg.Text(size=(80, 1), key='-SELECT-STATUS-')],
+    [
+        sg.Button('Clear files selection', key='-CLEAR-FILES-',
+                  tooltip='Unselect all files'),
+        sg.Button('Clear tags selection', key='-CLEAR-TAGS-',
+                  tooltip='Unselect all tags')
+    ],
+    [
+        sg.Button('Files from Tags', key='SELECT-FILES-FROM-TAGS',
+                  tooltip='Select files which match all of the selected tags'),
+        sg.Button('Tags from Files', key='SELECT-TAGS-FROM-FILES',
+                  tooltip='Select all tags which can be found in any of the selected files'),
+        sg.DropDown(values=['Replace', 'Expand'], default_value='Replace', readonly=True,
+                    tooltip='Replace current selection or expand it', size=30,
+                    key='REPLACE-OR-EXPAND-SELECTION')
+    ],
+    [sg.HorizontalSeparator()],
+    [sg.Button('Quit')]
+]
+
+
+def select_files_from_tags(window):
+    tags_list = window['-TAGS-LISTBOX-'].get()
+    file_list = list(get_matching_tagged_files(tags_list))
+    if file_list is None:
+        file_list = []
+    if window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
+        for f in window['-FILES-LISTBOX-'].get():
+            if f not in file_list:
+                file_list.append(f)
+    window['-FILES-LISTBOX-'].set_value(file_list)
+
+
+def select_tags_from_files(window):
+    files_list = window['-FILES-LISTBOX-'].get()
+    tags_list = list(get_tags_from_files(files_list))
+    if tags_list is None:
+        tags_list = []
+    if window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
+        for t in window['-TAGS-LISTBOX-'].get():
+            if t not in tags_list:
+                tags_list.append(t)
+    window['-TAGS-LISTBOX-'].set_value(tags_list)
+
+
+def update_selection_display(window):
+    n_selected_files = len(window['-FILES-LISTBOX-'].get())
+    n_selected_tags = len(window['-TAGS-LISTBOX-'].get())
+    window['-SELECT-STATUS-'].update(f'Selected: {n_selected_files} files | {n_selected_tags} tags')
+
+
+def update_tags_sort_order(window):
+    sort_order = window['TAGS-DROPDOWN-SORT'].get()
+    selected = window['-TAGS-LISTBOX-'].get()
+    tag_list = []
+
+    if sort_order is 'Alpha':
+        tag_list = list(_tags4files['tags'])
+        tag_list.sort()
+    elif sort_order is 'Frequency':
+        tag_list = [item[0] for item in count_tags()]
+
+    window['-TAGS-LISTBOX-'].update(tag_list)
+    window['-TAGS-LISTBOX-'].set_value(selected)
+    update_selection_display(window)
+
 
 # Create the window
 window = sg.Window('Tags For Files', layout)
@@ -736,11 +846,26 @@ window = sg.Window('Tags For Files', layout)
 # Display and interact with the Window using an Event Loop
 while True:
     event, values = window.read()
+    print(event, values)
     # See if user wants to quit or window was closed
     if event == sg.WINDOW_CLOSED or event == 'Quit':
         break
-    # Output a message to the window
-    window['-OUTPUT-'].update('Hello ' + values['-INPUT-'] + "! Thanks for trying PySimpleGUI")
+    elif event == '-FILES-LISTBOX-' or event == '-TAGS-LISTBOX-':
+        update_selection_display(window)
+    elif event == '-CLEAR-FILES-':
+        window['-FILES-LISTBOX-'].set_value([])
+        update_selection_display(window)
+    elif event == '-CLEAR-TAGS-':
+        window['-TAGS-LISTBOX-'].set_value([])
+        update_selection_display(window)
+    elif event == 'SELECT-FILES-FROM-TAGS':
+        select_files_from_tags(window)
+        update_selection_display(window)
+    elif event == 'SELECT-TAGS-FROM-FILES':
+        select_tags_from_files(window)
+        update_selection_display(window)
+    elif event == 'TAGS-DROPDOWN-SORT':
+        update_tags_sort_order(window)
 
 # Finish up by removing from the screen
 window.close()
