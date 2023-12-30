@@ -481,7 +481,7 @@ def export(t4f_data=None):
     return now_file
 
 
-def find_matching(term, t4f_data=None):
+def find_matching_files_for_text_term(term, t4f_data=None):
     """Return a list of file structs which match term (case-insensitive)"""
     if t4f_data is None:
         t4f_data = _tags4files
@@ -491,6 +491,20 @@ def find_matching(term, t4f_data=None):
         p = file['path'].lower()
         if t in p:
             out.append(file)
+        pass
+    return out
+
+
+def find_matching_tags_for_text_term(term, t4f_data=None):
+    """Return a list of tags which match term (case-insensitive)"""
+    if t4f_data is None:
+        t4f_data = _tags4files
+    out = []
+    t = term.lower()
+    for tag in t4f_data['tags']:
+        tag = tag.lower()
+        if t in tag:
+            out.append(tag)
         pass
     return out
 
@@ -508,7 +522,7 @@ def matching_m3u(term, t4f_data=None):
     """Writes out a m3u which matches a term (case-insensitive)"""
     if t4f_data is None:
         t4f_data = _tags4files
-    files = find_matching(term, t4f_data)
+    files = find_matching_files_for_text_term(term, t4f_data)
     paths = [f['path'] for f in files]
     if len(paths) > 0:
         filename = write_m3u_file(paths, 'playlist')
@@ -762,7 +776,7 @@ layout = [
                             horizontal_scroll=True)
                  ]]),
      sg.Column([[sg.Text('ALL TAGS:'),
-                 sg.DropDown(values=['Alpha', 'Frequency'],
+                 sg.DropDown(values=['Alpha', 'Frequency', 'Selected'],
                              default_value='Alpha',
                              enable_events=True,
                              readonly=True,
@@ -775,6 +789,7 @@ layout = [
                             horizontal_scroll=True)]])],
 
     [sg.Text(size=(80, 1), key='-SELECT-STATUS-')],
+    [sg.InputText('', size=(80, 1), key='FIND-ENTRY', enable_events=True), sg.Button('Find', key='FIND-BUTTON')],
     [
         sg.Button('Clear files selection', key='-CLEAR-FILES-',
                   tooltip='Unselect all files'),
@@ -836,6 +851,11 @@ def update_tags_sort_order(window):
     if sort_order is 'Alpha':
         tag_list = list(_tags4files['tags'])
         tag_list.sort()
+    elif sort_order is 'Selected':
+        tag_list = list(_tags4files['tags'])
+        augmented_tag_list = [(t, t in selected) for t in tag_list]
+        sorted_tag_list = sorted(augmented_tag_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
+        tag_list = [t[0] for t in sorted_tag_list]
     elif sort_order is 'Frequency':
         tag_list = [item[0] for item in count_tags()]
 
@@ -860,6 +880,19 @@ def do_make_playlist(window):
     status_message = f'Wrote {len(files_list)} files to {filename}'
     print(status_message)
     window['FILE_OP_STATUS'].update(status_message)
+
+
+def do_find(window):
+    find_text = window['FIND-ENTRY'].get()
+    if len(find_text) == 0:
+        window['-TAGS-LISTBOX-'].set_value([])
+        window['-FILES-LISTBOX-'].set_value([])
+    else:
+        file_matches = find_matching_files_for_text_term(find_text)
+        window['-FILES-LISTBOX-'].set_value([f['path'] for f in file_matches])
+        tag_matches = find_matching_tags_for_text_term(find_text)
+        window['-TAGS-LISTBOX-'].set_value(tag_matches)
+    update_selection_display(window)
 
 
 # Create the window
@@ -892,6 +925,8 @@ while True:
         do_export(window)
     elif event == 'PLAYLIST-BUTTON':
         do_make_playlist(window)
+    elif event == 'FIND-BUTTON':
+        do_find(window)
 
 # Finish up by removing from the screen
 window.close()
