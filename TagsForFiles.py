@@ -357,6 +357,15 @@ audio_extensions = [
 ]
 
 
+def find_record_for_path(pathname, t4f_data=None):
+    if t4f_data is None:
+        t4f_data = _tags4files
+    for f in t4f_data['files']:
+        if f['path'] == pathname:
+            return f
+    return None
+
+
 def find_untracked(extensions=None, t4f_data=None):
     """Find files which aren't accounted for yet."""
     if t4f_data is None:
@@ -788,7 +797,10 @@ files_and_tags_window_layout = [
                             enable_events=True,
                             horizontal_scroll=True)]])],
 
-    [sg.Text(size=(80, 1), key='-SELECT-STATUS-')],
+    [
+        sg.Button('Edit selected files', key='EDIT_SELECTED_FILES_BUTTON', disabled=True),
+        sg.Text(size=(80, 1), key='SELECTION_STATUS_TEXT')
+    ],
     [sg.InputText('', size=(80, 1), key='FIND-ENTRY', enable_events=True), sg.Button('Find', key='FIND-BUTTON')],
     [
         sg.Button('Clear files selection', key='-CLEAR-FILES-',
@@ -840,7 +852,8 @@ def select_tags_from_files(window):
 def update_selection_display(window):
     n_selected_files = len(window['-FILES-LISTBOX-'].get())
     n_selected_tags = len(window['-TAGS-LISTBOX-'].get())
-    window['-SELECT-STATUS-'].update(f'Selected: {n_selected_files} files | {n_selected_tags} tags')
+    window['SELECTION_STATUS_TEXT'].update(f'Selected: {n_selected_files} files | {n_selected_tags} tags')
+    window['EDIT_SELECTED_FILES_BUTTON'].update(disabled=(n_selected_files == 0))
 
 
 def update_tags_sort_order(window):
@@ -912,6 +925,65 @@ def do_find(window):
     update_selection_display(window)
 
 
+def increment_edit_cursor(edit_records_window,
+                          file_records_list,
+                          cursor,
+                          increment):
+    new_value = cursor + increment
+    if 0 <= new_value < len(file_records_list):
+        cursor = new_value
+    edit_records_window['EDIT_FILE_PREV_RECORD_BUTTON'].update(disabled=(cursor == 0))
+    edit_records_window['EDIT_FILE_NEXT_RECORD_BUTTON'].update(disabled=(cursor == (len(file_records_list) - 1)))
+    edit_records_window['EDIT_FILE_RECORD_PATH'].update(value=file_records_list[cursor]['path'])
+    edit_records_window['EDIT_FILE_RECORD_TAGS'].update(value=file_records_list[cursor]['tags'])
+    return cursor
+
+
+def do_edit_selected_files(window):
+    paths_list = window['-FILES-LISTBOX-'].get()
+    # Gather the corresponding file records
+    file_records_list = [find_record_for_path(p) for p in paths_list]
+    print(file_records_list)
+    cursor = 0
+    edit_window_layout = [
+        [sg.InputText(paths_list[0],
+                      size=(120, 1), key='EDIT_FILE_RECORD_PATH',
+                      use_readonly_for_disable=True, disabled=True)],
+        [sg.InputText(file_records_list[0]['tags'],
+                      size=(120, 1), key='EDIT_FILE_RECORD_TAGS')],
+        [sg.HorizontalSeparator()],
+        [
+            sg.Button('Prev Record', key='EDIT_FILE_PREV_RECORD_BUTTON', disabled=True,
+                      expand_x=True),
+            sg.Button('Next Record', key='EDIT_FILE_NEXT_RECORD_BUTTON',
+                      expand_x=True),
+        ],
+        [sg.HorizontalSeparator()],
+        [sg.Button('Back')]
+    ]
+    edit_window_title = f'Editing {len(file_records_list)} File Records'
+    edit_records_window = sg.Window(edit_window_title,
+                                    edit_window_layout,
+                                    modal=True)
+
+    while True:
+        event, values = edit_records_window.read()
+        if event == sg.WINDOW_CLOSED or event == 'Back':
+            break
+        elif event == 'EDIT_FILE_PREV_RECORD_BUTTON':
+            cursor = increment_edit_cursor(edit_records_window,
+                                           file_records_list,
+                                           cursor,
+                                           -1)
+        elif event == 'EDIT_FILE_NEXT_RECORD_BUTTON':
+            cursor = increment_edit_cursor(edit_records_window,
+                                           file_records_list,
+                                           cursor,
+                                           1)
+
+    edit_records_window.close()
+
+
 # Create the window
 files_and_tags_window = sg.Window('Tags For Files', files_and_tags_window_layout)
 
@@ -947,6 +1019,8 @@ while True:
         do_make_playlist(files_and_tags_window)
     elif event == 'FIND-BUTTON':
         do_find(files_and_tags_window)
+    elif event == 'EDIT_SELECTED_FILES_BUTTON':
+        do_edit_selected_files(files_and_tags_window)
 
 # Finish up by removing from the screen
 files_and_tags_window.close()
