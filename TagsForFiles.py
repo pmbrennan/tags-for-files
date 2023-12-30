@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+import argparse
 import datetime
 import os
 from os.path import exists
@@ -14,14 +15,25 @@ from tinytag import TinyTag
 import tinytag
 import PySimpleGUI as sg
 
-# TODO: Change this to a directory specified by the user
-main_data_directory = os.getcwd()
+parser = argparse.ArgumentParser('TagsForFiles')
+parser.add_argument('base',
+                    help='Base directory for data',
+                    default=os.getcwd(),
+                    nargs='?',
+                    )
+args = parser.parse_args()
+main_data_directory = args.base
+main_data_directory = os.path.expanduser(os.path.expandvars(main_data_directory))
 sys.path.append(main_data_directory)
 
 # Where to store the durable database
-# TODO: Prefix this with the data directory
 pickle_file_path = os.path.join(main_data_directory, "tags4files.pickle")
+pickle_file_path = os.path.abspath(pickle_file_path)
 print(f'pickle_file_path = {pickle_file_path}')
+
+text_file_path = os.path.join(main_data_directory, "tags.txt")
+text_file_path = os.path.abspath(text_file_path)
+print(f'text_file_path = {text_file_path}')
 
 
 def create_t4f_data():
@@ -57,7 +69,7 @@ def save():
 def load_t4f_data_from_pickle(filename=None):
     """Read data from the pickle file"""
     if filename is None:
-        filename=pickle_file_path
+        filename = pickle_file_path
     pickle_file = open(filename, "rb")
     t4f_data = pickle.load(pickle_file)
     pickle_file.close()
@@ -362,8 +374,7 @@ def find_untracked(extensions=None, t4f_data=None):
                 pass
             pass
         pass
-    # now = datetime.datetime.now()
-    filename = make_time_stamped_file_name('untracked')
+    filename = make_time_stamped_file_name('untracked', 'm3u')
     f = open(filename, "w", encoding="utf-8")
     print('\n\n'.join(untracked_files), file=f)
     f.close()
@@ -371,11 +382,13 @@ def find_untracked(extensions=None, t4f_data=None):
     print(f'Other extensions = {found_extensions}')
 
 
-def make_time_stamped_file_name(prefix):
+def make_time_stamped_file_name(prefix, suffix):
     """Make a filename which contains the time and date of creation"""
+    if suffix is None:
+        suffix = 'm3u'
     now = datetime.datetime.now()
     elements = [
-        f'{prefix}',
+        prefix,
         f'{now.year}',
         f'{now.month:02d}',
         f'{now.day:02d}',
@@ -383,7 +396,8 @@ def make_time_stamped_file_name(prefix):
         f'{now.minute:02d}',
         f'{now.second:02d}',
     ]
-    return f"{'-'.join(elements)}.m3u"
+    file_name = f"{'-'.join(elements)}.{suffix}"
+    return os.path.join(main_data_directory, file_name)
 
 
 def make_m3u(tags, t4f_data=None):
@@ -393,7 +407,7 @@ def make_m3u(tags, t4f_data=None):
     """
     if t4f_data is None:
         t4f_data = _tags4files
-    filename = make_time_stamped_file_name('playlist')
+    filename = make_time_stamped_file_name('playlist', 'm3u')
     f = open(filename, "w", encoding="utf-8")
     filelist = get_matching_tagged_files(tags, t4f_data, only_existing=True)
     print('\n'.join(filelist), file=f)
@@ -426,8 +440,9 @@ def top_rated_m3u(limit=0, t4f_data=None):
     if limit > 0:
         sorted_entries = sorted_entries[0:limit]
     file_list = [e['path'] for e in sorted_entries]
-    now = datetime.datetime.now()
-    filename = f"playlist-{now.year}-{now.month:02d}-{now.day:02d}-{now.hour:02d}-{now.minute:02d}-{now.second:02d}.m3u"
+
+    filename = make_time_stamped_file_name('playlist', 'm3u')
+
     f = open(filename, "w", encoding="utf-8")
     print('\n'.join(file_list), file=f)
     f.close()
@@ -438,8 +453,8 @@ def export(t4f_data=None):
     """Write tags4files out to a .txt file"""
     if t4f_data is None:
         t4f_data = _tags4files
-    now = datetime.datetime.now()
-    now_file = f"tags-{now.year}-{now.month:02d}-{now.day:02d}-{now.hour:02d}-{now.minute:02d}-{now.second:02d}.txt"
+
+    now_file = make_time_stamped_file_name('tags', 'txt')
 
     write_to_file(t4f_data, now_file)
     print(f'Results written to {now_file}')
@@ -460,7 +475,7 @@ def find_matching(term, t4f_data=None):
 
 
 def write_m3u_file(path_list, prefix):
-    m3u_filename = make_time_stamped_file_name(prefix)
+    m3u_filename = make_time_stamped_file_name(prefix, 'm3u')
     f = open(m3u_filename, "w", encoding="utf-8")
     print('\n'.join(path_list), file=f)
     f.close()
@@ -590,7 +605,7 @@ def move_if_tagged(ttag, ddir, t4f=None):
         t4f = _tags4files
     to_move = []
     n_moved = 0
-    dest_folder = os.path.abspath(ddir)
+    dest_folder = os.path.join(main_data_directory, ddir)
     if not os.path.exists(dest_folder):
         os.mkdir(dest_folder)
         pass
@@ -665,7 +680,7 @@ def archive(t4f=None):
 # - A tag in the form '<k>=<v>' where k and v are both valid strings is considered
 #   to be a variable, with the name k and the value v.
 # - Complete records are separated by one or more blank lines.
-import_text_data_from_file(_tags4files, "tags.txt")
+import_text_data_from_file(_tags4files, text_file_path)
 pp = pprint.PrettyPrinter(indent=2)
 
 print()
@@ -675,18 +690,18 @@ print()
 print(f"Read {len(_tags4files['tags'])} tags.")
 
 print()
-print('Unknown files:')
-pp.pprint(get_missing_files(_tags4files))
+missing_files = get_missing_files(_tags4files)
+print(f'{len(missing_files)} Missing files.')
+# pp.pprint(get_missing_files(_tags4files))
 
 print()
 possible_dupes = find_duplicated_filenames()
-print(f'{len(possible_dupes)} Possibly-duplicated files:')
-pp.pprint(possible_dupes)
+print(f'{len(possible_dupes)} Possibly-duplicated files.')
+# pp.pprint(possible_dupes)
 
 print()
 
 export()
-
 
 find_untracked(video_extensions)
 
@@ -712,7 +727,7 @@ print('Use `archive()` to move files marked with the `to-archive` tag to `.archi
 # PySimpleGui core
 layout = [[sg.Text("What's your name?")],
           [sg.Input(key='-INPUT-')],
-          [sg.Text(size=(40,1), key='-OUTPUT-')],
+          [sg.Text(size=(40, 1), key='-OUTPUT-')],
           [sg.Button('Ok'), sg.Button('Quit')]]
 
 # Create the window
