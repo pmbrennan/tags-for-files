@@ -750,38 +750,36 @@ files_list = [f['path'] for f in _tags4files['files']]
 tag_list = list(_tags4files['tags'])
 tag_list.sort()
 layout = [
-    [sg.Text(f'Base directory: {main_data_directory}')],
-    [sg.Text(f"{len(files_list)} files | {len(tag_list)} tags")],
+    [sg.Text(f'Base directory: {main_data_directory} | {len(files_list)} files | {len(tag_list)} tags')],
     [sg.HorizontalSeparator()],
-    [sg.Text('ALL FILES:')],
-    [sg.Listbox(values=files_list,
-                size=(120, 15),
-                key='-FILES-LISTBOX-',
-                select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
-                enable_events=True,
-                horizontal_scroll=True)],
-    [
-        sg.Text('ALL TAGS:'),
-        sg.DropDown(values=['Alpha', 'Frequency'],
-                    default_value='Alpha',
-                    enable_events=True,
-                    readonly=True,
-                    size=30, key='TAGS-DROPDOWN-SORT')
-    ],
-    [sg.Listbox(values=tag_list,
-                size=(45, 8),
-                key='-TAGS-LISTBOX-',
-                select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
-                enable_events=True,
-                horizontal_scroll=True)],
+
+    [sg.Column([[sg.Text('ALL FILES:')],
+                [sg.Listbox(values=files_list,
+                            size=(100, 20),
+                            key='-FILES-LISTBOX-',
+                            select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
+                            enable_events=True,
+                            horizontal_scroll=True)
+                 ]]),
+     sg.Column([[sg.Text('ALL TAGS:'),
+                 sg.DropDown(values=['Alpha', 'Frequency'],
+                             default_value='Alpha',
+                             enable_events=True,
+                             readonly=True,
+                             size=30, key='TAGS-DROPDOWN-SORT')],
+                [sg.Listbox(values=tag_list,
+                            size=(45, 20),
+                            key='-TAGS-LISTBOX-',
+                            select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
+                            enable_events=True,
+                            horizontal_scroll=True)]])],
+
     [sg.Text(size=(80, 1), key='-SELECT-STATUS-')],
     [
         sg.Button('Clear files selection', key='-CLEAR-FILES-',
                   tooltip='Unselect all files'),
         sg.Button('Clear tags selection', key='-CLEAR-TAGS-',
-                  tooltip='Unselect all tags')
-    ],
-    [
+                  tooltip='Unselect all tags'),
         sg.Button('Files from Tags', key='SELECT-FILES-FROM-TAGS',
                   tooltip='Select files which match all of the selected tags'),
         sg.Button('Tags from Files', key='SELECT-TAGS-FROM-FILES',
@@ -792,11 +790,8 @@ layout = [
     ],
     [
         sg.Button('Export entire file list', key='EXPORT-BUTTON', ),
-        sg.Text(size=(90, 1), key='EXPORT-STATUS'),
-    ],
-    [
         sg.Button('Make a playlist of selected files', key='PLAYLIST-BUTTON', ),
-        sg.Text(size=(90, 1), key='PLAYLIST-STATUS'),
+        sg.Text(size=(90, 1), key='FILE_OP_STATUS'),
     ],
     [sg.HorizontalSeparator()],
     [sg.Button('Quit')]
@@ -850,13 +845,13 @@ def update_tags_sort_order(window):
 
 
 def do_export(window):
-    window['EXPORT-STATUS'].update('Writing export file')
+    window['FILE_OP_STATUS'].update('Writing export file')
     file_name = export()
-    window['EXPORT-STATUS'].update(f'Wrote {file_name}')
+    window['FILE_OP_STATUS'].update(f'Wrote {file_name}')
 
 
 def do_make_playlist(window):
-    window['PLAYLIST-STATUS'].update('Writing m3u file')
+    window['FILE_OP_STATUS'].update('Writing m3u file')
     files_list = window['-FILES-LISTBOX-'].get()
     filename = make_time_stamped_file_name('playlist', 'm3u')
     f = open(filename, 'w', encoding='utf-8')
@@ -864,7 +859,7 @@ def do_make_playlist(window):
     f.close()
     status_message = f'Wrote {len(files_list)} files to {filename}'
     print(status_message)
-    window['PLAYLIST-STATUS'].update(status_message)
+    window['FILE_OP_STATUS'].update(status_message)
 
 
 # Create the window
