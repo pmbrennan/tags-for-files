@@ -935,7 +935,9 @@ def increment_edit_cursor(edit_records_window,
     edit_records_window['EDIT_FILE_PREV_RECORD_BUTTON'].update(disabled=(cursor == 0))
     edit_records_window['EDIT_FILE_NEXT_RECORD_BUTTON'].update(disabled=(cursor == (len(file_records_list) - 1)))
     edit_records_window['EDIT_FILE_RECORD_PATH'].update(value=file_records_list[cursor]['path'])
-    edit_records_window['EDIT_FILE_RECORD_TAGS'].update(value=file_records_list[cursor]['tags'])
+    edit_records_window['EDIT_FILE_RECORD_TAGS'].update(values=file_records_list[cursor]['tags'])
+    edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
+    edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].update(value='')
     return cursor
 
 
@@ -949,13 +951,19 @@ def do_edit_selected_files(window):
         [sg.InputText(paths_list[0],
                       size=(120, 1), key='EDIT_FILE_RECORD_PATH',
                       use_readonly_for_disable=True, disabled=True)],
-        [sg.InputText(file_records_list[0]['tags'],
-                      size=(120, 1), key='EDIT_FILE_RECORD_TAGS')],
+        [sg.Listbox(file_records_list[0]['tags'],
+                    size=(120, 10), key='EDIT_FILE_RECORD_TAGS',
+                    enable_events=True)],
+        [sg.InputText('', size=(90, 1), key='EDIT_FILE_RECORD_TAG_EDIT',
+                      enable_events=True, focus=True, expand_x=True),
+         sg.Button('Add', key='EDIT_FILE_RECORD_ADD_TAG',
+                   bind_return_key=True)],
         [sg.HorizontalSeparator()],
         [
             sg.Button('Prev Record', key='EDIT_FILE_PREV_RECORD_BUTTON', disabled=True,
                       expand_x=True),
             sg.Button('Next Record', key='EDIT_FILE_NEXT_RECORD_BUTTON',
+                      disabled=len(file_records_list) < 2,
                       expand_x=True),
         ],
         [sg.HorizontalSeparator()],
@@ -964,10 +972,14 @@ def do_edit_selected_files(window):
     edit_window_title = f'Editing {len(file_records_list)} File Records'
     edit_records_window = sg.Window(edit_window_title,
                                     edit_window_layout,
-                                    modal=True)
+                                    modal=True, finalize=True,
+                                    # return_keyboard_events=True
+                                    )
+    edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
 
     while True:
         event, values = edit_records_window.read()
+        # print(event, values)
         if event == sg.WINDOW_CLOSED or event == 'Back':
             break
         elif event == 'EDIT_FILE_PREV_RECORD_BUTTON':
@@ -980,6 +992,20 @@ def do_edit_selected_files(window):
                                            file_records_list,
                                            cursor,
                                            1)
+        elif event == 'EDIT_FILE_RECORD_TAG_EDIT':
+            s = edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].get()
+            print(s)
+            if len(s.strip()) > 0:
+                c = s[-1]
+                if c == ' ':
+                    new_tag = s.strip()
+                    if len(new_tag) > 0:
+                        print(f'Accepting new tag <{new_tag}>')
+                        edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].update(value='')
+                if c == '\t':
+                    print('TAB')
+                if c == '\n':
+                    print('RETURN')
 
     edit_records_window.close()
 
