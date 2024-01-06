@@ -276,6 +276,7 @@ class TagsForFiles:
         """
         files = self.find_matching_files_for_text_term(term)
         paths = [f.path for f in files]
+        paths.sort()
         if len(paths) > 0:
             filename = write_m3u_file(paths, 'playlist')
             print(f'Wrote {len(paths)} files to {filename}')
@@ -288,7 +289,8 @@ class TagsForFiles:
         Make a m3u playlist of all the files which contain all the passed
         tags.
         """
-        filelist = self.get_matching_tagged_files(tags, only_existing=True)
+        filelist = list(self.get_matching_tagged_files(tags, only_existing=True))
+        filelist.sort()
         if len(filelist) > 0:
             filename = write_m3u_file(filelist, 'playlist')
             print(f'Wrote {len(filelist)} files to {filename}')
