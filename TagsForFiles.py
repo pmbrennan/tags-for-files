@@ -14,30 +14,13 @@ import PySimpleGUI as sg
 import tinytag
 from tinytag import TinyTag
 
-# ######################################################################
-# Parse arguments and set up primary data structures
-parser = argparse.ArgumentParser('TagsForFiles')
-parser.add_argument('base',
-                    help='Base directory for data',
-                    default=os.getcwd(),
-                    nargs='?',
-                    )
-args = parser.parse_args()
-main_data_directory = args.base
-main_data_directory = os.path.expanduser(os.path.expandvars(main_data_directory))
-sys.path.append(main_data_directory)
-
-text_file_path = os.path.join(main_data_directory, "tags.txt")
-text_file_path = os.path.abspath(text_file_path)
-print(f'text_file_path = {text_file_path}')
-
 
 # ######################################################################
 # FileRecord
 # ######################################################################
 class FileRecord:
-    def __init__(self, id, path, file_exists):
-        self.id = id
+    def __init__(self, file_id, path, file_exists):
+        self.id = file_id
         self.path = path
         self.file_exists = file_exists
         self.comments = []
@@ -79,7 +62,7 @@ class TagsForFiles:
             if f.path == path:
                 return f
         # We didn't find it; therefore, create it.
-        f = FileRecord(id=len(self.file_records), path=path, file_exists=exists(path))
+        f = FileRecord(file_id=len(self.file_records), path=path, file_exists=exists(path))
         if not f.file_exists:
             print(f"WARNING: Could not find file '{path}'")
         self.file_records.append(f)
@@ -131,7 +114,7 @@ class TagsForFiles:
         Given a tag4files structure as defined by:
         - 'tags' a set of tags, each a string
         - 'file_records' a list of structs for each file:
-          - 'id' a numeric id
+          - 'file_id' a numeric file_id
           - 'path' filepath,
           - 'file_exists' boolean, does the pathname correspond to an existing file,
           - 'tags' a set of tags for this file
@@ -235,7 +218,7 @@ class TagsForFiles:
             tags_list = list(tags)
             tags_list.sort()
 
-            p = paragraph_wrap(' '.join(tags_list), 72)
+            p = Util.paragraph_wrap(' '.join(tags_list), 72)
 
             print(p, file=file)
             print('', file=file)
@@ -264,7 +247,7 @@ class TagsForFiles:
         :return: the filename of the exported file.
         """
 
-        now_file = make_time_stamped_file_name('tags', 'txt')
+        now_file = Util.make_time_stamped_file_name('tags', 'txt')
 
         self.write_file_records_to_file(now_file)
         print(f'Results written to {now_file}')
@@ -278,7 +261,7 @@ class TagsForFiles:
         paths = [f.path for f in files]
         paths.sort()
         if len(paths) > 0:
-            filename = write_m3u_file(paths, 'playlist')
+            filename = Util.write_m3u_file(paths, 'playlist')
             print(f'Wrote {len(paths)} files to {filename}')
         else:
             print('No records found.')
@@ -292,7 +275,7 @@ class TagsForFiles:
         filelist = list(self.get_matching_tagged_files(tags, only_existing=True))
         filelist.sort()
         if len(filelist) > 0:
-            filename = write_m3u_file(filelist, 'playlist')
+            filename = Util.write_m3u_file(filelist, 'playlist')
             print(f'Wrote {len(filelist)} files to {filename}')
         else:
             print('No records found.')
@@ -328,7 +311,7 @@ class TagsForFiles:
         Find files which aren't accounted for yet.
         """
         if extensions is None:
-            extensions = audio_extensions
+            extensions = Util.audio_extensions
         if data_directory is None:
             data_directory = main_data_directory
         untracked_files_list = []
@@ -342,7 +325,7 @@ class TagsForFiles:
         gen = os.walk(data_directory)
         for rec in gen:
             dir_path = rec[0]
-            dir_names = rec[1]
+            # dir_names = rec[1]
             filenames = rec[2]
             for filename in filenames:
                 path_tuple = os.path.splitext(filename)
@@ -353,7 +336,7 @@ class TagsForFiles:
                         pass
                     pass
 
-                if not ends_with(filename, extensions):
+                if not Util.ends_with(filename, extensions):
                     continue
 
                 path = os.path.join(dir_path, filename)
@@ -362,7 +345,7 @@ class TagsForFiles:
                     pass
                 pass
             pass
-        filename = make_time_stamped_file_name('untracked', 'm3u')
+        filename = Util.make_time_stamped_file_name('untracked', 'm3u')
         f = open(filename, "w", encoding="utf-8")
         # TODO Break this out from this function.
         print('\n\n'.join(iter(untracked_files_list)), file=f)
@@ -433,7 +416,7 @@ class TagsForFiles:
     def extract_all_tags(self):
         for f in self.file_records:
             if f.file_exists:
-                new_tags = extract_tags(f.path)
+                new_tags = Util.extract_tags(f.path)
                 f.tags.update(new_tags)
         pass
 
@@ -442,7 +425,7 @@ class TagsForFiles:
             old_tags = f.tags
             new_tags = set()
             for t in old_tags:
-                new_tags.add(transform_to_tag(t))
+                new_tags.add(Util.transform_to_tag(t))
                 pass
             f.tags = new_tags
             pass
@@ -475,471 +458,484 @@ class TagsForFiles:
         return out
 
 
-# Primary data structure
-mainTagsForFilesObj = TagsForFiles()
-
-
 # ######################################################################
+# Utility
 # ######################################################################
-# ######################################################################
-
-
-# ######################################################################
-# Utility functions
-# ######################################################################
-def paragraph_wrap(text_to_reflow, num_columns):
-    """
-    Restrict a string to <num_columns> width. Add newlines as necessary.
-    Compresses multiple spaces between words into single spaces.
-    TODO: Add test methods for this function.
-    """
-    sub_strings = list(filter(lambda c: len(c) > 0, text_to_reflow.split(' ')))
-    out_list = []
-    build = ''
-    for i in range(0, len(sub_strings)):
-        if len(sub_strings[i]) == 0:
-            continue
-        if len(build) + len(sub_strings[i]) < num_columns:
-            build += ' ' + sub_strings[i].strip()
-            pass
-        elif build == '':
-            out_list.append(' ' + sub_strings[i].strip())
-            pass
-        else:
-            out_list.append(build.strip())
-            build = sub_strings[i]
-            pass
+class Util:
+    def __init__(self):
         pass
-    if len(build) > 0:
-        out_list.append(build.strip())
-    return '\n'.join(out_list)
 
-
-def ends_with(filename, extensions=None):
-    """
-    Returns true if filename ends with one of the given extensions.
-    :param filename:
-    :param extensions:
-    :return: True if the filename ends with an extension in <extensions>
-    """
-    if extensions is None:
-        extensions = []
-    for ext in extensions:
-        if filename.endswith(ext):
-            return True
-        pass
-    return False
-
-
-video_extensions = [
-    'wmv', 'mp4', 'mkv', 'mov', 'mpg', 'avi', 'm4v', 'MPG', 'MP4', 'MOV', 'mpeg'
-]
-
-audio_extensions = [
-    'ogg', 'wav', 'mp3'
-]
-
-
-def make_time_stamped_file_name(prefix, suffix):
-    """
-    Make a filename which contains the time and date of creation
-    :param prefix: a prefix to prepend to the new filename.
-    :param suffix: a suffix to append to the new filename.
-    :return: a filename in the form <prefix>-<date>-<time>.<suffix>
-             <date> will be in ISO-8601 format e.g. 2023-01-01.
-             <time> will be in the form <hour>-<minute>-<second>.
-    """
-    if suffix is None:
-        suffix = 'm3u'
-    now = datetime.datetime.now()
-    elements = [
-        prefix,
-        f'{now.year}',
-        f'{now.month:02d}',
-        f'{now.day:02d}',
-        f'{now.hour:02d}',
-        f'{now.minute:02d}',
-        f'{now.second:02d}',
+    video_extensions = [
+        'wmv', 'mp4', 'mkv', 'mov', 'mpg', 'avi', 'm4v', 'MPG', 'MP4', 'MOV', 'mpeg'
     ]
-    file_name = f"{'-'.join(elements)}.{suffix}"
-    return os.path.join(main_data_directory, file_name)
 
+    audio_extensions = [
+        'ogg', 'wav', 'mp3'
+    ]
 
-def write_m3u_file(path_list, prefix):
-    m3u_filename = make_time_stamped_file_name(prefix, 'm3u')
-    f = open(m3u_filename, "w", encoding="utf-8")
-    print('\n'.join(path_list), file=f)
-    f.close()
-    return m3u_filename
-    pass
+    @staticmethod
+    def paragraph_wrap(text_to_reflow, num_columns):
+        """
+        Restrict a string to <num_columns> width. Add newlines as necessary.
+        Compresses multiple spaces between words into single spaces.
+        TODO: Add test methods for this function.
+        """
+        sub_strings = list(filter(lambda c: len(c) > 0, text_to_reflow.split(' ')))
+        out_list = []
+        build = ''
+        for i in range(0, len(sub_strings)):
+            if len(sub_strings[i]) == 0:
+                continue
+            if len(build) + len(sub_strings[i]) < num_columns:
+                build += ' ' + sub_strings[i].strip()
+                pass
+            elif build == '':
+                out_list.append(' ' + sub_strings[i].strip())
+                pass
+            else:
+                out_list.append(build.strip())
+                build = sub_strings[i]
+                pass
+            pass
+        if len(build) > 0:
+            out_list.append(build.strip())
+        return '\n'.join(out_list)
 
+    @staticmethod
+    def ends_with(filename, extensions=None):
+        """
+        Returns true if filename ends with one of the given extensions.
+        :param filename:
+        :param extensions:
+        :return: True if the filename ends with an extension in <extensions>
+        """
+        if extensions is None:
+            extensions = []
+        for ext in extensions:
+            if filename.endswith(ext):
+                return True
+            pass
+        return False
 
-def transform_to_tag(text):
-    to_remove = '/,()\'\"!&%;^$#@<>{}[]\\|?*~`'  # These characters have no business in a tag
+    @staticmethod
+    def make_time_stamped_file_name(prefix, suffix):
+        """
+        Make a filename which contains the time and date of creation
+        :param prefix: a prefix to prepend to the new filename.
+        :param suffix: a suffix to append to the new filename.
+        :return: a filename in the form <prefix>-<date>-<time>.<suffix>
+                 <date> will be in ISO-8601 format e.g. "2023-01-01".
+                 <time> will be in the form <hour>-<minute>-<second>.
+        """
+        if suffix is None:
+            suffix = 'm3u'
+        now = datetime.datetime.now()
+        elements = [
+            prefix,
+            f'{now.year}',
+            f'{now.month:02d}',
+            f'{now.day:02d}',
+            f'{now.hour:02d}',
+            f'{now.minute:02d}',
+            f'{now.second:02d}',
+        ]
+        file_name = f"{'-'.join(elements)}.{suffix}"
+        return os.path.join(main_data_directory, file_name)
 
-    tag = text.lower().translate({ord(i): None for i in to_remove})
-    tag = tag.replace(' - ', '-') \
-        .replace('    ', '-') \
-        .replace('   ', '-') \
-        .replace('  ', '-') \
-        .replace(' ', '-') \
-        .replace('-----', '-') \
-        .replace('----', '-') \
-        .replace('---', '-') \
-        .replace('--', '-')
-    return tag
+    @staticmethod
+    def write_m3u_file(path_list, prefix):
+        m3u_filename = Util.make_time_stamped_file_name(prefix, 'm3u')
+        f = open(m3u_filename, "w", encoding="utf-8")
+        print('\n'.join(path_list), file=f)
+        f.close()
+        return m3u_filename
+        pass
 
+    @staticmethod
+    def transform_to_tag(text):
+        to_remove = '/,()\'\"!&%;^$#@<>{}[]\\|?*~`'  # These characters have no business in a tag
 
-def extract_tags(pathname):
-    out = set()
-    try:
-        tag = TinyTag.get(pathname)
-    except tinytag.tinytag.TinyTagException as e:
-        print(f'WARNING: exception for {pathname}:')
-        print(e)
+        tag = text.lower().translate({ord(i): None for i in to_remove})
+        tag = tag.replace(' - ', '-') \
+            .replace('    ', '-') \
+            .replace('   ', '-') \
+            .replace('  ', '-') \
+            .replace(' ', '-') \
+            .replace('-----', '-') \
+            .replace('----', '-') \
+            .replace('---', '-') \
+            .replace('--', '-')
+        return tag
+
+    @staticmethod
+    def extract_tags(pathname):
+        out = set()
+        try:
+            tag = TinyTag.get(pathname)
+        except tinytag.tinytag.TinyTagException as e:
+            print(f'WARNING: exception for {pathname}:')
+            print(e)
+            return out
+
+        if tag.artist is not None and len(tag.artist) > 0:
+            out.add('artist=' + Util.transform_to_tag(tag.artist))
+        if tag.year is not None and len(tag.year) > 0:
+            out.add('year=' + Util.transform_to_tag(tag.year))
+        if tag.album is not None and len(tag.album) > 0:
+            out.add('album=' + Util.transform_to_tag(tag.album))
+        if tag.title is not None and len(tag.title) > 0:
+            out.add('title=' + Util.transform_to_tag(tag.title))
         return out
 
-    if tag.artist is not None and len(tag.artist) > 0:
-        out.add('artist=' + transform_to_tag(tag.artist))
-    if tag.year is not None and len(tag.year) > 0:
-        out.add('year=' + transform_to_tag(tag.year))
-    if tag.album is not None and len(tag.album) > 0:
-        out.add('album=' + transform_to_tag(tag.album))
-    if tag.title is not None and len(tag.title) > 0:
-        out.add('title=' + transform_to_tag(tag.title))
-    return out
 
+# ######################################################################
+# MainWindow
+# ######################################################################
+class MainWindow:
+    # TODO: Put the data directory in the TagsForFilesObj and remove it from this ctor.
+    def __init__(self, tags_for_files_obj: TagsForFiles, data_directory):
+        self.tags_for_files_obj = tags_for_files_obj
+        files_list = [record.path for record in tags_for_files_obj.file_records]
+        tag_list = list(tags_for_files_obj.tags)
+        tag_list.sort()
+        self.layout = [
+            [sg.Text(f'Base directory: {data_directory} | {len(files_list)} files | {len(tag_list)} tags')],
+            [sg.HorizontalSeparator()],
 
-# Data format is as follows:
-# A record consists of a sequence of non-blank lines.
-# - The first line contains the file path
-# - An optional number of lines after the path contains file comments,
-#   indicated by the presence of a '#' as the first character of the line.
-# - Every subsequent non-blank line contains tags, each separated by 1 or more spaces.
-# - A tag in the form '<k>=<v>' where k and v are both valid strings is considered
-#   to be a variable, with the name k and the value v.
-# - Complete records are separated by one or more blank lines.
-mainTagsForFilesObj.import_text_data_from_file(text_file_path)
-pp = pprint.PrettyPrinter(indent=2)
+            [sg.Column([[sg.Text('ALL FILES:'),
+                         sg.DropDown(values=['Alpha', 'Selected'],
+                                     default_value='Alpha',
+                                     enable_events=True,
+                                     readonly=True,
+                                     size=30, key='FILES-DROPDOWN-SORT')],
+                        [sg.Listbox(values=files_list,
+                                    size=(100, 20),
+                                    key='FILES-LISTBOX',
+                                    select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
+                                    enable_events=True,
+                                    horizontal_scroll=True)
+                         ]]),
+             sg.Column([[sg.Text('ALL TAGS:'),
+                         sg.DropDown(values=['Alpha', 'Frequency', 'Selected'],
+                                     default_value='Alpha',
+                                     enable_events=True,
+                                     readonly=True,
+                                     size=30, key='TAGS-DROPDOWN-SORT')],
+                        [sg.Listbox(values=tag_list,
+                                    size=(45, 20),
+                                    key='TAGS-LISTBOX',
+                                    select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
+                                    enable_events=True,
+                                    horizontal_scroll=True)]])],
 
-print()
-print(f"Read {len(mainTagsForFilesObj.file_records)} files.")
+            [
+                sg.Button('Edit selected files', key='EDIT_SELECTED_FILES_BUTTON', disabled=True),
+                sg.Text(size=(80, 1), key='SELECTION_STATUS_TEXT')
+            ],
+            [sg.InputText('', size=(80, 1), key='FIND-ENTRY', enable_events=True),
+             sg.Button('Find', key='FIND-BUTTON')],
+            [
+                sg.Button('Clear files selection', key='-CLEAR-FILES-',
+                          tooltip='Unselect all files'),
+                sg.Button('Clear tags selection', key='-CLEAR-TAGS-',
+                          tooltip='Unselect all tags'),
+                sg.Button('Files from Tags', key='SELECT-FILES-FROM-TAGS',
+                          tooltip='Select files which match all of the selected tags'),
+                sg.Button('Tags from Files', key='SELECT-TAGS-FROM-FILES',
+                          tooltip='Select all tags which can be found in any of the selected files'),
+                sg.DropDown(values=['Replace', 'Expand'], default_value='Replace', readonly=True,
+                            tooltip='Replace current selection or expand it', size=30,
+                            key='REPLACE-OR-EXPAND-SELECTION')
+            ],
+            [
+                sg.Button('Export entire file list', key='EXPORT-BUTTON', ),
+                sg.Button('Make a playlist of selected files', key='PLAYLIST-BUTTON', ),
+                sg.InputText(size=(90, 1), key='FILE_OP_STATUS', use_readonly_for_disable=True, disabled=True),
+            ],
+            [sg.HorizontalSeparator()],
+            [sg.Button('Quit')]
+        ]
+        self.window = sg.Window('Tags For Files', self.layout)
 
-print()
-print(f"Read {len(mainTagsForFilesObj.tags)} tags.")
+    def run(self):
+        while True:
+            event, values = self.window.read()
+            print(event, values)
+            # See if user wants to quit or window was closed
+            if event == sg.WINDOW_CLOSED or event == 'Quit':
+                break
+            elif event == 'FILES-LISTBOX' or event == 'TAGS-LISTBOX':
+                self.update_selection_display()
+            elif event == '-CLEAR-FILES-':
+                self.window['FILES-LISTBOX'].set_value([])
+                self.update_selection_display()
+            elif event == '-CLEAR-TAGS-':
+                self.window['TAGS-LISTBOX'].set_value([])
+                self.update_selection_display()
+            elif event == 'SELECT-FILES-FROM-TAGS':
+                self.select_files_from_tags()
+                self.update_selection_display()
+            elif event == 'SELECT-TAGS-FROM-FILES':
+                self.select_tags_from_files()
+                self.update_selection_display()
+            elif event == 'TAGS-DROPDOWN-SORT':
+                self.update_tags_sort_order()
+            elif event == 'FILES-DROPDOWN-SORT':
+                self.update_files_sort_order()
+            elif event == 'EXPORT-BUTTON':
+                self.do_export()
+            elif event == 'PLAYLIST-BUTTON':
+                self.do_make_playlist()
+            elif event == 'FIND-BUTTON':
+                self.do_find()
+            elif event == 'EDIT_SELECTED_FILES_BUTTON':
+                self.do_edit_selected_files()
 
-print()
-missing_files = mainTagsForFilesObj.get_missing_files()
-print(f'{len(missing_files)} Missing files.')
+            # Finish up by removing from the screen
+        self.window.close()
+        pass
 
-print()
-possible_dupes = mainTagsForFilesObj.find_duplicated_filenames()
-print(f'{len(possible_dupes)} Possibly-duplicated files.')
+    def select_files_from_tags(self):
+        tags_list = self.window['TAGS-LISTBOX'].get()
+        file_list = list(self.tags_for_files_obj.get_matching_tagged_files(tags_list))
+        if file_list is None:
+            file_list = []
+        if self.window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
+            for f in self.window['FILES-LISTBOX'].get():
+                if f not in file_list:
+                    file_list.append(f)
+        self.window['FILES-LISTBOX'].set_value(file_list)
 
-print()
+    def update_selection_display(self):
+        n_selected_files = len(self.window['FILES-LISTBOX'].get())
+        n_selected_tags = len(self.window['TAGS-LISTBOX'].get())
+        self.window['SELECTION_STATUS_TEXT'].update(f'Selected: {n_selected_files} files | {n_selected_tags} tags')
+        self.window['EDIT_SELECTED_FILES_BUTTON'].update(disabled=(n_selected_files == 0))
 
-mainTagsForFilesObj.export()
+    def select_tags_from_files(self):
+        selected_files_list = self.window['FILES-LISTBOX'].get()
+        tags_list = list(self.tags_for_files_obj.get_tags_from_files(selected_files_list))
+        if tags_list is None:
+            tags_list = []
+        if self.window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
+            for t in self.window['TAGS-LISTBOX'].get():
+                if t not in tags_list:
+                    tags_list.append(t)
+        self.window['TAGS-LISTBOX'].set_value(tags_list)
 
-mainTagsForFilesObj.find_untracked(main_data_directory, video_extensions)
-
-print('Use `export()` to write to a text file tags list')
-print('Use `save() to write to a pickle file')
-print('Use `find_matching(term) to find file names which match a search term')
-print('Use `get_matching_tagged_files(tags)` to get a list of files which match tags')
-print('Use `make_m3u(tags)` to make a playlist of the given tags')
-print('Use `matching_m3u(term)` to make a playlist matching the given term')
-print('Use `top_rated_m3u()` to make a playlist of the top-rated tracks')
-print('Use `find_untracked(extensions)` to make a list of untracked files.')
-print('Use `get_missing_files()` to find files which are indexed but not on the filesystem.')
-print('Use `extract_all_tags()` to pull tags out of embedded metadata.')
-print('Use `delete()` to move files marked with the `to-delete` tag to `.trash`')
-print('Use `favorite()` to move files marked with the `move-to-favorites` tag to `.favorites`')
-print('Use `archive()` to move files marked with the `to-archive` tag to `.archive`')
-
-# PySimpleGui core
-files_list = [f.path for f in mainTagsForFilesObj.file_records]
-tag_list = list(mainTagsForFilesObj.tags)
-tag_list.sort()
-files_and_tags_window_layout = [
-    [sg.Text(f'Base directory: {main_data_directory} | {len(files_list)} files | {len(tag_list)} tags')],
-    [sg.HorizontalSeparator()],
-
-    [sg.Column([[sg.Text('ALL FILES:'),
-                 sg.DropDown(values=['Alpha', 'Selected'],
-                             default_value='Alpha',
-                             enable_events=True,
-                             readonly=True,
-                             size=30, key='FILES-DROPDOWN-SORT')],
-                [sg.Listbox(values=files_list,
-                            size=(100, 20),
-                            key='-FILES-LISTBOX-',
-                            select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
-                            enable_events=True,
-                            horizontal_scroll=True)
-                 ]]),
-     sg.Column([[sg.Text('ALL TAGS:'),
-                 sg.DropDown(values=['Alpha', 'Frequency', 'Selected'],
-                             default_value='Alpha',
-                             enable_events=True,
-                             readonly=True,
-                             size=30, key='TAGS-DROPDOWN-SORT')],
-                [sg.Listbox(values=tag_list,
-                            size=(45, 20),
-                            key='-TAGS-LISTBOX-',
-                            select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
-                            enable_events=True,
-                            horizontal_scroll=True)]])],
-
-    [
-        sg.Button('Edit selected files', key='EDIT_SELECTED_FILES_BUTTON', disabled=True),
-        sg.Text(size=(80, 1), key='SELECTION_STATUS_TEXT')
-    ],
-    [sg.InputText('', size=(80, 1), key='FIND-ENTRY', enable_events=True), sg.Button('Find', key='FIND-BUTTON')],
-    [
-        sg.Button('Clear files selection', key='-CLEAR-FILES-',
-                  tooltip='Unselect all files'),
-        sg.Button('Clear tags selection', key='-CLEAR-TAGS-',
-                  tooltip='Unselect all tags'),
-        sg.Button('Files from Tags', key='SELECT-FILES-FROM-TAGS',
-                  tooltip='Select files which match all of the selected tags'),
-        sg.Button('Tags from Files', key='SELECT-TAGS-FROM-FILES',
-                  tooltip='Select all tags which can be found in any of the selected files'),
-        sg.DropDown(values=['Replace', 'Expand'], default_value='Replace', readonly=True,
-                    tooltip='Replace current selection or expand it', size=30,
-                    key='REPLACE-OR-EXPAND-SELECTION')
-    ],
-    [
-        sg.Button('Export entire file list', key='EXPORT-BUTTON', ),
-        sg.Button('Make a playlist of selected files', key='PLAYLIST-BUTTON', ),
-        sg.InputText(size=(90, 1), key='FILE_OP_STATUS', use_readonly_for_disable=True, disabled=True),
-    ],
-    [sg.HorizontalSeparator()],
-    [sg.Button('Quit')]
-]
-
-
-def select_files_from_tags(window):
-    tags_list = window['-TAGS-LISTBOX-'].get()
-    file_list = list(mainTagsForFilesObj.get_matching_tagged_files(tags_list))
-    if file_list is None:
-        file_list = []
-    if window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
-        for f in window['-FILES-LISTBOX-'].get():
-            if f not in file_list:
-                file_list.append(f)
-    window['-FILES-LISTBOX-'].set_value(file_list)
-
-
-def select_tags_from_files(window):
-    selected_files_list = window['-FILES-LISTBOX-'].get()
-    tags_list = list(mainTagsForFilesObj.get_tags_from_files(selected_files_list))
-    if tags_list is None:
+    def update_tags_sort_order(self):
+        sort_order = self.window['TAGS-DROPDOWN-SORT'].get()
+        selected = self.window['TAGS-LISTBOX'].get()
         tags_list = []
-    if window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
-        for t in window['-TAGS-LISTBOX-'].get():
-            if t not in tags_list:
-                tags_list.append(t)
-    window['-TAGS-LISTBOX-'].set_value(tags_list)
+
+        if sort_order is 'Alpha':
+            tags_list = list(self.tags_for_files_obj.tags)
+            tags_list.sort()
+        elif sort_order is 'Selected':
+            tags_list = list(self.tags_for_files_obj.tags)
+            augmented_tag_list = [(t, t in selected) for t in tags_list]
+            sorted_tag_list = sorted(augmented_tag_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
+            tags_list = [t[0] for t in sorted_tag_list]
+        elif sort_order is 'Frequency':
+            tags_list = [item[0] for item in self.tags_for_files_obj.count_tags()]
+        self.window['TAGS-LISTBOX'].update(tags_list)
+        self.window['TAGS-LISTBOX'].set_value(selected)
+        self.update_selection_display()
+
+    def update_files_sort_order(self):
+        sort_order = self.window['FILES-DROPDOWN-SORT'].get()
+        selected = self.window['FILES-LISTBOX'].get()
+        file_list = []
+        if sort_order is 'Alpha':
+            file_list = [f.path for f in self.tags_for_files_obj.file_records]
+            file_list.sort()
+        elif sort_order is 'Selected':
+            file_list = [f.path for f in self.tags_for_files_obj.file_records]
+            augmented_file_list = [(f, f in selected) for f in file_list]
+            sorted_file_list = sorted(augmented_file_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
+            file_list = [f[0] for f in sorted_file_list]
+        self.window['FILES-LISTBOX'].update(file_list)
+        self.window['FILES-LISTBOX'].set_value(selected)
+        self.update_selection_display()
+
+    def do_export(self):
+        self.window['FILE_OP_STATUS'].update('Writing export file')
+        file_name = self.tags_for_files_obj.export()
+        self.window['FILE_OP_STATUS'].update(f'Wrote {file_name}')
+
+    def do_make_playlist(self):
+        self.window['FILE_OP_STATUS'].update('Writing m3u file')
+        files_list = self.window['FILES-LISTBOX'].get()
+        filename = Util.make_time_stamped_file_name('playlist', 'm3u')
+        f = open(filename, 'w', encoding='utf-8')
+        print('\n'.join(files_list), file=f)
+        f.close()
+        status_message = f'Wrote {len(files_list)} files to {filename}'
+        print(status_message)
+        self.window['FILE_OP_STATUS'].update(status_message)
+
+    def do_find(self):
+        find_text = self.window['FIND-ENTRY'].get()
+        if len(find_text) == 0:
+            self.window['TAGS-LISTBOX'].set_value([])
+            self.window['FILES-LISTBOX'].set_value([])
+        else:
+            file_matches = self.tags_for_files_obj.find_matching_files_for_text_term(find_text)
+            self.window['FILES-LISTBOX'].set_value([f.path for f in file_matches])
+            tag_matches = self.tags_for_files_obj.find_matching_tags_for_text_term(find_text)
+            self.window['TAGS-LISTBOX'].set_value(tag_matches)
+        self.update_selection_display()
+
+    def do_edit_selected_files(self):
+        paths_list = self.window['FILES-LISTBOX'].get()
+        # Gather the corresponding file records
+        file_records_list = [self.tags_for_files_obj.find_record_for_path(p) for p in paths_list]
+        edit_files_window = EditFilesWindow(file_records_list)
+        edit_files_window.run()
 
 
-def update_selection_display(window):
-    n_selected_files = len(window['-FILES-LISTBOX-'].get())
-    n_selected_tags = len(window['-TAGS-LISTBOX-'].get())
-    window['SELECTION_STATUS_TEXT'].update(f'Selected: {n_selected_files} files | {n_selected_tags} tags')
-    window['EDIT_SELECTED_FILES_BUTTON'].update(disabled=(n_selected_files == 0))
+# ######################################################################
+# EditFilesWindow
+# ######################################################################
+class EditFilesWindow:
+    def __init__(self, list_of_file_records):
+        self.file_records = list_of_file_records
+        self.cursor = 0
+        self.layout = [
+            [sg.InputText(list_of_file_records[0].path,
+                          size=(120, 1), key='EDIT_FILE_RECORD_PATH',
+                          use_readonly_for_disable=True, disabled=True)],
+            [sg.Listbox(list_of_file_records[0].tags,
+                        size=(120, 10), key='EDIT_FILE_RECORD_TAGS',
+                        enable_events=True)],
+            [sg.InputText('', size=(90, 1), key='EDIT_FILE_RECORD_TAG_EDIT',
+                          enable_events=True, focus=True, expand_x=True),
+             sg.Button('Add', key='EDIT_FILE_RECORD_ADD_TAG',
+                       bind_return_key=True)],
+            [sg.HorizontalSeparator()],
+            [
+                sg.Button('Prev Record', key='EDIT_FILE_PREV_RECORD_BUTTON', disabled=True,
+                          expand_x=True),
+                sg.Button('Next Record', key='EDIT_FILE_NEXT_RECORD_BUTTON',
+                          disabled=len(list_of_file_records) < 2,
+                          expand_x=True),
+            ],
+            [sg.HorizontalSeparator()],
+            [sg.Button('Back')]
+        ]
+        edit_window_title = f'Editing {len(list_of_file_records)} File Records'
+        self.window = sg.Window(edit_window_title, self.layout,
+                                modal=True, finalize=True,
+                                # return_keyboard_events=True
+                                )
+        self.window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
+
+    def increment_cursor_position(self, increment):
+        new_value = self.cursor + increment
+        if 0 <= new_value < len(self.file_records):
+            self.cursor = new_value
+        self.window['EDIT_FILE_PREV_RECORD_BUTTON'].update(disabled=(self.cursor == 0))
+        self.window['EDIT_FILE_NEXT_RECORD_BUTTON'].update(
+            disabled=(self.cursor == (len(self.file_records) - 1)))
+        self.window['EDIT_FILE_RECORD_PATH'].update(value=self.file_records[self.cursor].path)
+        self.window['EDIT_FILE_RECORD_TAGS'].update(values=self.file_records[self.cursor].tags)
+        self.window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
+        self.window['EDIT_FILE_RECORD_TAG_EDIT'].update(value='')
+
+    def run(self):
+        while True:
+            event, values = self.window.read()
+            # print(event, values)
+            if event == sg.WINDOW_CLOSED or event == 'Back':
+                break
+            elif event == 'EDIT_FILE_PREV_RECORD_BUTTON':
+                self.increment_cursor_position(-1)
+            elif event == 'EDIT_FILE_NEXT_RECORD_BUTTON':
+                self.increment_cursor_position(1)
+            elif event == 'EDIT_FILE_RECORD_TAG_EDIT':
+                s = self.window['EDIT_FILE_RECORD_TAG_EDIT'].get()
+                print(s)
+                if len(s.strip()) > 0:
+                    c = s[-1]
+                    if c == ' ':
+                        new_tag = s.strip()
+                        if len(new_tag) > 0:
+                            print(f'Accepting new tag <{new_tag}>')
+                            self.window['EDIT_FILE_RECORD_TAG_EDIT'].update(value='')
+                    if c == '\t':
+                        print('TAB')
+                    if c == '\n':
+                        print('RETURN')
+
+        self.window.close()
 
 
-def update_tags_sort_order(window):
-    sort_order = window['TAGS-DROPDOWN-SORT'].get()
-    selected = window['-TAGS-LISTBOX-'].get()
-    tags_list = []
+# ######################################################################
+# Main Loop
+# ######################################################################
+if __name__ == '__main__':
+    # ######################################################################
+    # Parse arguments and set up primary data structures
+    # ######################################################################
+    parser = argparse.ArgumentParser('TagsForFiles')
+    parser.add_argument('base',
+                        help='Base directory for data',
+                        default=os.getcwd(),
+                        nargs='?',
+                        )
+    args = parser.parse_args()
+    main_data_directory = args.base
+    main_data_directory = os.path.expanduser(os.path.expandvars(main_data_directory))
+    sys.path.append(main_data_directory)
 
-    if sort_order is 'Alpha':
-        tags_list = list(mainTagsForFilesObj.tags)
-        tags_list.sort()
-    elif sort_order is 'Selected':
-        tags_list = list(mainTagsForFilesObj.tags)
-        augmented_tag_list = [(t, t in selected) for t in tags_list]
-        sorted_tag_list = sorted(augmented_tag_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
-        tags_list = [t[0] for t in sorted_tag_list]
-    elif sort_order is 'Frequency':
-        tags_list = [item[0] for item in mainTagsForFilesObj.count_tags()]
+    text_file_path = os.path.join(main_data_directory, "tags.txt")
+    text_file_path = os.path.abspath(text_file_path)
+    print(f'text_file_path = {text_file_path}')
 
-    window['-TAGS-LISTBOX-'].update(tags_list)
-    window['-TAGS-LISTBOX-'].set_value(selected)
-    update_selection_display(window)
+    mainTagsForFilesObj = TagsForFiles()
 
+    # Data format is as follows:
+    # A record consists of a sequence of non-blank lines.
+    # - The first line contains the file path
+    # - An optional number of lines after the path contains file comments,
+    #   indicated by the presence of a '#' as the first character of the line.
+    # - Every subsequent non-blank line contains tags, each separated by 1 or more spaces.
+    # - A tag in the form '<k>=<v>' where k and v are both valid strings is considered
+    #   to be a variable, with the name k and the value v.
+    # - Complete records are separated by one or more blank lines.
+    mainTagsForFilesObj.import_text_data_from_file(text_file_path)
+    pp = pprint.PrettyPrinter(indent=2)
 
-def update_files_sort_order(window):
-    sort_order = window['FILES-DROPDOWN-SORT'].get()
-    selected = window['-FILES-LISTBOX-'].get()
-    file_list = []
-    if sort_order is 'Alpha':
-        file_list = [f.path for f in mainTagsForFilesObj.file_records]
-        file_list.sort()
-    elif sort_order is 'Selected':
-        file_list = [f.path for f in mainTagsForFilesObj.file_records]
-        augmented_file_list = [(f, f in selected) for f in file_list]
-        sorted_file_list = sorted(augmented_file_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
-        file_list = [f[0] for f in sorted_file_list]
-    window['-FILES-LISTBOX-'].update(file_list)
-    window['-FILES-LISTBOX-'].set_value(selected)
-    update_selection_display(window)
+    print()
+    print(f"Read {len(mainTagsForFilesObj.file_records)} files.")
 
+    print()
+    print(f"Read {len(mainTagsForFilesObj.tags)} tags.")
 
-def do_export(window):
-    window['FILE_OP_STATUS'].update('Writing export file')
-    file_name = mainTagsForFilesObj.export()
-    window['FILE_OP_STATUS'].update(f'Wrote {file_name}')
+    print()
+    missing_files = mainTagsForFilesObj.get_missing_files()
+    print(f'{len(missing_files)} Missing files.')
 
+    print()
+    possible_dupes = mainTagsForFilesObj.find_duplicated_filenames()
+    print(f'{len(possible_dupes)} Possibly-duplicated files.')
 
-def do_make_playlist(window):
-    window['FILE_OP_STATUS'].update('Writing m3u file')
-    files_list = window['-FILES-LISTBOX-'].get()
-    filename = make_time_stamped_file_name('playlist', 'm3u')
-    f = open(filename, 'w', encoding='utf-8')
-    print('\n'.join(files_list), file=f)
-    f.close()
-    status_message = f'Wrote {len(files_list)} files to {filename}'
-    print(status_message)
-    window['FILE_OP_STATUS'].update(status_message)
+    print()
 
+    mainTagsForFilesObj.export()
 
-def do_find(window):
-    find_text = window['FIND-ENTRY'].get()
-    if len(find_text) == 0:
-        window['-TAGS-LISTBOX-'].set_value([])
-        window['-FILES-LISTBOX-'].set_value([])
-    else:
-        file_matches = mainTagsForFilesObj.find_matching_files_for_text_term(find_text)
-        window['-FILES-LISTBOX-'].set_value([f.path for f in file_matches])
-        tag_matches = mainTagsForFilesObj.find_matching_tags_for_text_term(find_text)
-        window['-TAGS-LISTBOX-'].set_value(tag_matches)
-    update_selection_display(window)
+    mainTagsForFilesObj.find_untracked(main_data_directory, Util.video_extensions)
 
+    print('Use `mainTagsForFilesObj.export()` to write to a text file tags list')
+    print('Use `mainTagsForFilesObj.find_matching(term) to find file names which match a search term')
+    print('Use `mainTagsForFilesObj.get_matching_tagged_files(tags)` to get a list of files which match tags')
+    print('Use `mainTagsForFilesObj.make_m3u_for_tags(tags)` to make a playlist of the given tags')
+    print('Use `mainTagsForFilesObj.make_m3u_for_text_match(term)` to make a playlist matching the given term')
+    print('Use `mainTagsForFilesObj.find_untracked(extensions)` to make a list of untracked files.')
+    print('Use `mainTagsForFilesObj.get_missing_files()` to find files which are indexed but not on the filesystem.')
+    print('Use `mainTagsForFilesObj.extract_all_tags()` to pull tags out of embedded metadata.')
+    print('Use `mainTagsForFilesObj.delete()` to move files marked with the `to-delete` tag to `.trash`')
+    print('Use `mainTagsForFilesObj.favorite()` to move files marked with the `move-to-favorites` tag to `.favorites`')
+    print('Use `mainTagsForFilesObj.archive()` to move files marked with the `to-archive` tag to `.archive`')
 
-def increment_edit_cursor(edit_records_window,
-                          file_records_list,
-                          cursor,
-                          increment):
-    new_value = cursor + increment
-    if 0 <= new_value < len(file_records_list):
-        cursor = new_value
-    edit_records_window['EDIT_FILE_PREV_RECORD_BUTTON'].update(disabled=(cursor == 0))
-    edit_records_window['EDIT_FILE_NEXT_RECORD_BUTTON'].update(disabled=(cursor == (len(file_records_list) - 1)))
-    edit_records_window['EDIT_FILE_RECORD_PATH'].update(value=file_records_list[cursor].path)
-    edit_records_window['EDIT_FILE_RECORD_TAGS'].update(values=file_records_list[cursor].tags)
-    edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
-    edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].update(value='')
-    return cursor
-
-
-def do_edit_selected_files(window):
-    paths_list = window['-FILES-LISTBOX-'].get()
-    # Gather the corresponding file records
-    file_records_list = [mainTagsForFilesObj.find_record_for_path(p) for p in paths_list]
-    print(file_records_list)
-    cursor = 0
-    edit_window_layout = [
-        [sg.InputText(paths_list[0],
-                      size=(120, 1), key='EDIT_FILE_RECORD_PATH',
-                      use_readonly_for_disable=True, disabled=True)],
-        [sg.Listbox(file_records_list[0].tags,
-                    size=(120, 10), key='EDIT_FILE_RECORD_TAGS',
-                    enable_events=True)],
-        [sg.InputText('', size=(90, 1), key='EDIT_FILE_RECORD_TAG_EDIT',
-                      enable_events=True, focus=True, expand_x=True),
-         sg.Button('Add', key='EDIT_FILE_RECORD_ADD_TAG',
-                   bind_return_key=True)],
-        [sg.HorizontalSeparator()],
-        [
-            sg.Button('Prev Record', key='EDIT_FILE_PREV_RECORD_BUTTON', disabled=True,
-                      expand_x=True),
-            sg.Button('Next Record', key='EDIT_FILE_NEXT_RECORD_BUTTON',
-                      disabled=len(file_records_list) < 2,
-                      expand_x=True),
-        ],
-        [sg.HorizontalSeparator()],
-        [sg.Button('Back')]
-    ]
-    edit_window_title = f'Editing {len(file_records_list)} File Records'
-    edit_records_window = sg.Window(edit_window_title,
-                                    edit_window_layout,
-                                    modal=True, finalize=True,
-                                    # return_keyboard_events=True
-                                    )
-    edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
-
-    while True:
-        event, values = edit_records_window.read()
-        # print(event, values)
-        if event == sg.WINDOW_CLOSED or event == 'Back':
-            break
-        elif event == 'EDIT_FILE_PREV_RECORD_BUTTON':
-            cursor = increment_edit_cursor(edit_records_window,
-                                           file_records_list,
-                                           cursor,
-                                           -1)
-        elif event == 'EDIT_FILE_NEXT_RECORD_BUTTON':
-            cursor = increment_edit_cursor(edit_records_window,
-                                           file_records_list,
-                                           cursor,
-                                           1)
-        elif event == 'EDIT_FILE_RECORD_TAG_EDIT':
-            s = edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].get()
-            print(s)
-            if len(s.strip()) > 0:
-                c = s[-1]
-                if c == ' ':
-                    new_tag = s.strip()
-                    if len(new_tag) > 0:
-                        print(f'Accepting new tag <{new_tag}>')
-                        edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].update(value='')
-                if c == '\t':
-                    print('TAB')
-                if c == '\n':
-                    print('RETURN')
-
-    edit_records_window.close()
-
-
-# Create the window
-files_and_tags_window = sg.Window('Tags For Files', files_and_tags_window_layout)
-
-# EVENT LOOP:
-# Display and interact with the Window using an Event Loop
-while True:
-    event, values = files_and_tags_window.read()
-    print(event, values)
-    # See if user wants to quit or window was closed
-    if event == sg.WINDOW_CLOSED or event == 'Quit':
-        break
-    elif event == '-FILES-LISTBOX-' or event == '-TAGS-LISTBOX-':
-        update_selection_display(files_and_tags_window)
-    elif event == '-CLEAR-FILES-':
-        files_and_tags_window['-FILES-LISTBOX-'].set_value([])
-        update_selection_display(files_and_tags_window)
-    elif event == '-CLEAR-TAGS-':
-        files_and_tags_window['-TAGS-LISTBOX-'].set_value([])
-        update_selection_display(files_and_tags_window)
-    elif event == 'SELECT-FILES-FROM-TAGS':
-        select_files_from_tags(files_and_tags_window)
-        update_selection_display(files_and_tags_window)
-    elif event == 'SELECT-TAGS-FROM-FILES':
-        select_tags_from_files(files_and_tags_window)
-        update_selection_display(files_and_tags_window)
-    elif event == 'TAGS-DROPDOWN-SORT':
-        update_tags_sort_order(files_and_tags_window)
-    elif event == 'FILES-DROPDOWN-SORT':
-        update_files_sort_order(files_and_tags_window)
-    elif event == 'EXPORT-BUTTON':
-        do_export(files_and_tags_window)
-    elif event == 'PLAYLIST-BUTTON':
-        do_make_playlist(files_and_tags_window)
-    elif event == 'FIND-BUTTON':
-        do_find(files_and_tags_window)
-    elif event == 'EDIT_SELECTED_FILES_BUTTON':
-        do_edit_selected_files(files_and_tags_window)
-
-# Finish up by removing from the screen
-files_and_tags_window.close()
+    MainWindow(mainTagsForFilesObj, main_data_directory).run()
