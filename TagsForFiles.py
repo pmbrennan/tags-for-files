@@ -49,13 +49,22 @@ class FileRecord:
 # TagsForFiles
 # ######################################################################
 class TagsForFiles:
-    def __init__(self):
+    def __init__(self, tags_file_path=None):
+        self.tags_file_path = tags_file_path
         self.tags = set()
         self.file_records = []
+
+        if tags_file_path is not None:
+            self.import_text_data_from_file(self.tags_file_path)
         pass
+
+    def get_base_directory(self):
+        if self.tags_file_path is not None:
+            return os.path.dirname(self.tags_file_path)
 
     def add_path(self, path):
         """
+        Add a file record for the given path.
         If the file record already exists, return it, otherwise create a new record and append it.
         """
         for f in self.file_records:
@@ -104,6 +113,7 @@ class TagsForFiles:
         Add data from a text file to the base data structure
         TODO: Parse the file directly instead of reading lines into a buffer and then parsing the buffer.
         """
+        self.tags_file_path = filename
         file = open(filename, encoding='utf-8')
         data = file.readlines()
         file.close()
@@ -592,14 +602,14 @@ class Util:
 # MainWindow
 # ######################################################################
 class MainWindow:
-    # TODO: Put the data directory in the TagsForFilesObj and remove it from this ctor.
-    def __init__(self, tags_for_files_obj: TagsForFiles, data_directory):
+    def __init__(self, tags_for_files_obj: TagsForFiles):
         self.tags_for_files_obj = tags_for_files_obj
         files_list = [record.path for record in tags_for_files_obj.file_records]
         tag_list = list(tags_for_files_obj.tags)
         tag_list.sort()
+        base = tags_for_files_obj.get_base_directory()
         self.layout = [
-            [sg.Text(f'Base directory: {data_directory} | {len(files_list)} files | {len(tag_list)} tags')],
+            [sg.Text(f'Base directory: {base} | {len(files_list)} files | {len(tag_list)} tags')],
             [sg.HorizontalSeparator()],
 
             [sg.Column([[sg.Text('ALL FILES:'),
@@ -892,7 +902,8 @@ if __name__ == '__main__':
     text_file_path = os.path.abspath(text_file_path)
     print(f'text_file_path = {text_file_path}')
 
-    mainTagsForFilesObj = TagsForFiles()
+    mainTagsForFilesObj = TagsForFiles(text_file_path)
+    print(f'tags file base = {mainTagsForFilesObj.get_base_directory()}')
 
     # Data format is as follows:
     # A record consists of a sequence of non-blank lines.
@@ -903,7 +914,6 @@ if __name__ == '__main__':
     # - A tag in the form '<k>=<v>' where k and v are both valid strings is considered
     #   to be a variable, with the name k and the value v.
     # - Complete records are separated by one or more blank lines.
-    mainTagsForFilesObj.import_text_data_from_file(text_file_path)
     pp = pprint.PrettyPrinter(indent=2)
 
     print()
@@ -926,16 +936,4 @@ if __name__ == '__main__':
 
     mainTagsForFilesObj.find_untracked(main_data_directory, Util.video_extensions)
 
-    print('Use `mainTagsForFilesObj.export()` to write to a text file tags list')
-    print('Use `mainTagsForFilesObj.find_matching(term) to find file names which match a search term')
-    print('Use `mainTagsForFilesObj.get_matching_tagged_files(tags)` to get a list of files which match tags')
-    print('Use `mainTagsForFilesObj.make_m3u_for_tags(tags)` to make a playlist of the given tags')
-    print('Use `mainTagsForFilesObj.make_m3u_for_text_match(term)` to make a playlist matching the given term')
-    print('Use `mainTagsForFilesObj.find_untracked(extensions)` to make a list of untracked files.')
-    print('Use `mainTagsForFilesObj.get_missing_files()` to find files which are indexed but not on the filesystem.')
-    print('Use `mainTagsForFilesObj.extract_all_tags()` to pull tags out of embedded metadata.')
-    print('Use `mainTagsForFilesObj.delete()` to move files marked with the `to-delete` tag to `.trash`')
-    print('Use `mainTagsForFilesObj.favorite()` to move files marked with the `move-to-favorites` tag to `.favorites`')
-    print('Use `mainTagsForFilesObj.archive()` to move files marked with the `to-archive` tag to `.archive`')
-
-    MainWindow(mainTagsForFilesObj, main_data_directory).run()
+    MainWindow(mainTagsForFilesObj).run()

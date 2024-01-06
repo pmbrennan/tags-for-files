@@ -18,7 +18,8 @@ if __name__ == '__main__':
 
 
 class TagsForFilesTest(TestCase):
-    def test_paragraph_wrap(self):
-        result = TagsForFiles.paragraph_wrap(
+    @staticmethod
+    def test_paragraph_wrap():
+        result = TagsForFiles.Util.paragraph_wrap(
             "england expects     every    man to    do his     duty", 20)
         assert (result == "england expects\nevery man to do his\nduty")
