@@ -1,17 +1,22 @@
 # tags-for-files
-Rudimentary tagging system for managing media files.
 
-At the moment, this is configured to be a command-line Python script. You can run it in the same directory
-where your media files are stored, accompanied by a file called `tags.txt`.
-You run it by invoking the command:
+A rudimentary tagging system for managing media files.
 
-    python -i TagsForFiles.py
+A simple GUI based on [PySimpleGUI](https://github.com/PySimpleGUI/PySimpleGUI) is provided.
 
-and then you can manage your files via the included functions.
+At the moment, this is configured to be a command-line Python script. 
+You can run it by invoking `python TagsForFiles.py` and supplying the pathname
+of the directory where a file called `tags.txt` is stored.
 
-A proper UI is forthcoming.
+    python TagsForFiles.py <tags directory>
 
-**TODO**: Add a real UI to this project.
+The tags file, in turn, 
+contains references to the media files to be managed. Conventionally, these are all
+in subdirectories of the one where `tags.txt` is to be found, but there is no
+requirement for this.
+
+The reason for the plain text tags file is so that the user can read, edit
+and modify the tags with or without this tool, maintaining maximum portability.
 
 **TODO**: Add a comprehensive test suite.
 
@@ -43,6 +48,7 @@ Example:
     J:\Music\BitterSweet\Drama\01-04- The Bomb.mp3
     # 'The Bomb' by Bitter:Sweet
     album=drama artist=bitter:sweet bitter-sweet title=the-bomb year=2008
+    move-to-favorites
     
     J:\Music\BitterSweet\Drama\01-05- Drama.mp3
     album=drama artist=bitter:sweet bitter-sweet title=drama year=2008
