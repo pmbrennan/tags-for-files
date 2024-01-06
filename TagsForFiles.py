@@ -6,7 +6,6 @@ import datetime
 import os
 import pprint
 import shutil
-import subprocess as sp
 import sys
 from os.path import basename
 from os.path import exists
@@ -26,6 +25,7 @@ class FileRecord:
         self.file_exists = file_exists
         self.comments = []
         self.tags = set()
+        self.edited = False
 
     def get_variables(self):
         """
@@ -54,10 +54,10 @@ class TagsForFiles:
         self.tags_file_path = tags_file_path
         self.tags = set()
         self.file_records = []
+        self.edited = False
 
         if tags_file_path is not None:
             self.import_text_data_from_file(self.tags_file_path)
-        pass
 
     def get_base_directory(self):
         if self.tags_file_path is not None:
@@ -439,19 +439,23 @@ class TagsForFiles:
                 new_tags.add(Util.transform_to_tag(t))
                 pass
             f.tags = new_tags
+            f.edited = True
             pass
         pass
+        self.edited = True
 
     def replace_tag(self, target, replace):
         for f in self.file_records:
             if target in f.tags:
                 f.tags.remove(target)
                 f.tags.add(replace)
+                f.edited = True
                 pass
             pass
         if target in self.tags:
             self.tags.remove(target)
             self.tags.add(replace)
+            self.edited = True
             pass
         pass
 
@@ -624,8 +628,9 @@ class MainWindow:
                                     key='FILES-LISTBOX',
                                     select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
                                     enable_events=True,
-                                    horizontal_scroll=True)
-                         ]]),
+                                    horizontal_scroll=True,
+                                    expand_x=True, expand_y=True)
+                         ]], expand_x=True, expand_y=True),
              sg.Column([[sg.Text('ALL TAGS:'),
                          sg.DropDown(values=['Alpha', 'Frequency', 'Selected'],
                                      default_value='Alpha',
@@ -637,7 +642,8 @@ class MainWindow:
                                     key='TAGS-LISTBOX',
                                     select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
                                     enable_events=True,
-                                    horizontal_scroll=True)]])],
+                                    horizontal_scroll=True,
+                                    expand_x=True, expand_y=True)]], expand_x=True, expand_y=True)],
 
             [
                 sg.Button('Edit selected files', key='EDIT_SELECTED_FILES_BUTTON', disabled=True),
@@ -704,6 +710,8 @@ class MainWindow:
 
             # Finish up by removing from the screen
         self.window.close()
+        if self.tags_for_files_obj.edited:
+            self.tags_for_files_obj.export()
         pass
 
     def select_files_from_tags(self):
@@ -805,8 +813,17 @@ class MainWindow:
         edit_files_window.run()
 
         # Update
+        num_edited = 0
         for file_record in file_records_list:
             self.tags_for_files_obj.tags.update(file_record.tags)
+            if file_record.edited:
+                num_edited += 1
+                self.tags_for_files_obj.edited = True
+
+        print(f'Edited {num_edited} file records.')
+        print(f'tags4files object edited = {self.tags_for_files_obj.edited}')
+        if num_edited > 0 or self.tags_for_files_obj.edited:
+            print(f'Export recommended.')
         # TODO: Update Window better than this
         files_list = [record.path for record in self.tags_for_files_obj.file_records]
         tag_list = list(self.tags_for_files_obj.tags)
@@ -906,6 +923,7 @@ class EditFileWindow:
     def add_tag(self, tag):
         print(f'Accepting new tag <{tag}>')
         self.file_records[self.cursor].tags.add(tag)
+        self.file_records[self.cursor].edited = True
         self.window['EDIT_FILE_RECORD_TAGS'].update(values=self.file_records[self.cursor].tags)
 
 
