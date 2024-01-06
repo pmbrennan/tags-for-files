@@ -6,6 +6,7 @@ import datetime
 import os
 import pprint
 import shutil
+import subprocess as sp
 import sys
 from os.path import basename
 from os.path import exists
@@ -563,7 +564,7 @@ class Util:
 
     @staticmethod
     def transform_to_tag(text):
-        to_remove = '/,()\'\"!&%;^$#@<>{}[]\\|?*~`'  # These characters have no business in a tag
+        to_remove = '/,()\'\"!&%;^$#@<>{}[]\\|?*~` \r\t\n'  # These characters have no business in a tag
 
         tag = text.lower().translate({ord(i): None for i in to_remove})
         tag = tag.replace(' - ', '-') \
@@ -665,7 +666,7 @@ class MainWindow:
             [sg.HorizontalSeparator()],
             [sg.Button('Quit')]
         ]
-        self.window = sg.Window('Tags For Files', self.layout)
+        self.window = sg.Window('Tags For Files', self.layout, resizable=True)
 
     def run(self):
         while True:
@@ -800,21 +801,36 @@ class MainWindow:
         paths_list = self.window['FILES-LISTBOX'].get()
         # Gather the corresponding file records
         file_records_list = [self.tags_for_files_obj.find_record_for_path(p) for p in paths_list]
-        edit_files_window = EditFilesWindow(file_records_list)
+        edit_files_window = EditFileWindow(file_records_list)
         edit_files_window.run()
 
+        # Update
+        for file_record in file_records_list:
+            self.tags_for_files_obj.tags.update(file_record.tags)
+        # TODO: Update Window better than this
+        files_list = [record.path for record in self.tags_for_files_obj.file_records]
+        tag_list = list(self.tags_for_files_obj.tags)
+        tag_list.sort()
+        self.window['FILES-LISTBOX'].update(values=files_list)
+        self.window['FILES-LISTBOX'].set_value([])
+        self.window['TAGS-LISTBOX'].update(values=tag_list)
+        self.window['TAGS-LISTBOX'].set_value([])
+        self.window['FIND-ENTRY'].update('')
+        self.window.refresh()
+
 
 # ######################################################################
-# EditFilesWindow
+# EditFileWindow
 # ######################################################################
-class EditFilesWindow:
+class EditFileWindow:
     def __init__(self, list_of_file_records):
         self.file_records = list_of_file_records
         self.cursor = 0
         self.layout = [
             [sg.InputText(list_of_file_records[0].path,
                           size=(120, 1), key='EDIT_FILE_RECORD_PATH',
-                          use_readonly_for_disable=True, disabled=True)],
+                          use_readonly_for_disable=True, disabled=True),
+             sg.Button('Play')],
             [sg.Listbox(list_of_file_records[0].tags,
                         size=(120, 10), key='EDIT_FILE_RECORD_TAGS',
                         enable_events=True)],
@@ -836,6 +852,7 @@ class EditFilesWindow:
         edit_window_title = f'Editing {len(list_of_file_records)} File Records'
         self.window = sg.Window(edit_window_title, self.layout,
                                 modal=True, finalize=True,
+                                resizable=True,
                                 # return_keyboard_events=True
                                 )
         self.window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
@@ -858,26 +875,38 @@ class EditFilesWindow:
             # print(event, values)
             if event == sg.WINDOW_CLOSED or event == 'Back':
                 break
+            elif event == 'Play':
+                path = self.file_records[self.cursor].path
+                os.startfile(path)
             elif event == 'EDIT_FILE_PREV_RECORD_BUTTON':
                 self.increment_cursor_position(-1)
             elif event == 'EDIT_FILE_NEXT_RECORD_BUTTON':
                 self.increment_cursor_position(1)
+            elif event == 'EDIT_FILE_RECORD_ADD_TAG':
+                s = self.window['EDIT_FILE_RECORD_TAG_EDIT'].get()
+                new_tag = Util.transform_to_tag(s.strip())
+                tag_ready = len(new_tag) > 0
+                new_edit_val = '' if tag_ready else new_tag
+                if tag_ready:
+                    self.add_tag(new_tag)
+                self.window['EDIT_FILE_RECORD_TAG_EDIT'].update(value=new_edit_val)
             elif event == 'EDIT_FILE_RECORD_TAG_EDIT':
                 s = self.window['EDIT_FILE_RECORD_TAG_EDIT'].get()
-                print(s)
                 if len(s.strip()) > 0:
                     c = s[-1]
-                    if c == ' ':
-                        new_tag = s.strip()
-                        if len(new_tag) > 0:
-                            print(f'Accepting new tag <{new_tag}>')
-                            self.window['EDIT_FILE_RECORD_TAG_EDIT'].update(value='')
-                    if c == '\t':
-                        print('TAB')
-                    if c == '\n':
-                        print('RETURN')
+                    tag_ready = c == ' '
+                    new_tag = Util.transform_to_tag(s.strip())
+                    new_edit_val = '' if tag_ready else new_tag
+                    if tag_ready and len(new_tag) > 0:
+                        self.add_tag(new_tag)
+                    self.window['EDIT_FILE_RECORD_TAG_EDIT'].update(value=new_edit_val)
 
         self.window.close()
+
+    def add_tag(self, tag):
+        print(f'Accepting new tag <{tag}>')
+        self.file_records[self.cursor].tags.add(tag)
+        self.window['EDIT_FILE_RECORD_TAGS'].update(values=self.file_records[self.cursor].tags)
 
 
 # ######################################################################
