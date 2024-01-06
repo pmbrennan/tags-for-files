@@ -728,15 +728,15 @@ class MainWindow:
         selected = self.window['TAGS-LISTBOX'].get()
         tags_list = []
 
-        if sort_order is 'Alpha':
+        if sort_order == 'Alpha':
             tags_list = list(self.tags_for_files_obj.tags)
             tags_list.sort()
-        elif sort_order is 'Selected':
+        elif sort_order == 'Selected':
             tags_list = list(self.tags_for_files_obj.tags)
             augmented_tag_list = [(t, t in selected) for t in tags_list]
             sorted_tag_list = sorted(augmented_tag_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
             tags_list = [t[0] for t in sorted_tag_list]
-        elif sort_order is 'Frequency':
+        elif sort_order == 'Frequency':
             tags_list = [item[0] for item in self.tags_for_files_obj.count_tags()]
         self.window['TAGS-LISTBOX'].update(tags_list)
         self.window['TAGS-LISTBOX'].set_value(selected)
@@ -746,10 +746,10 @@ class MainWindow:
         sort_order = self.window['FILES-DROPDOWN-SORT'].get()
         selected = self.window['FILES-LISTBOX'].get()
         file_list = []
-        if sort_order is 'Alpha':
+        if sort_order == 'Alpha':
             file_list = [f.path for f in self.tags_for_files_obj.file_records]
             file_list.sort()
-        elif sort_order is 'Selected':
+        elif sort_order == 'Selected':
             file_list = [f.path for f in self.tags_for_files_obj.file_records]
             augmented_file_list = [(f, f in selected) for f in file_list]
             sorted_file_list = sorted(augmented_file_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
