@@ -3,9 +3,7 @@
 
 import argparse
 import datetime
-import operator
 import os
-import pickle
 import pprint
 import shutil
 import sys
@@ -16,7 +14,7 @@ import PySimpleGUI as sg
 import tinytag
 from tinytag import TinyTag
 
-# **********************************************************************
+# ######################################################################
 # Parse arguments and set up primary data structures
 parser = argparse.ArgumentParser('TagsForFiles')
 parser.add_argument('base',
@@ -29,249 +27,477 @@ main_data_directory = args.base
 main_data_directory = os.path.expanduser(os.path.expandvars(main_data_directory))
 sys.path.append(main_data_directory)
 
-# Where to store the durable database
-pickle_file_path = os.path.join(main_data_directory, "tags4files.pickle")
-pickle_file_path = os.path.abspath(pickle_file_path)
-print(f'pickle_file_path = {pickle_file_path}')
-
-# Where to store the compatible database
 text_file_path = os.path.join(main_data_directory, "tags.txt")
 text_file_path = os.path.abspath(text_file_path)
 print(f'text_file_path = {text_file_path}')
 
 
-# **********************************************************************
-# Top-level internal data structure
-def create_t4f_data():
-    """Create and return the base data structure"""
-    data = {
-        'files': [],  # List of file objects with their respective tags
-        'tags': set(),  # Set of unique tags
-    }
-    return data
+# ######################################################################
+# FileRecord
+# ######################################################################
+class FileRecord:
+    def __init__(self, id, path, file_exists):
+        self.id = id
+        self.path = path
+        self.file_exists = file_exists
+        self.comments = []
+        self.tags = set()
+
+    def get_variables(self):
+        """
+        Find all the tags in a file object in the form "<key>=<value>" and build a dict
+        which represents the mapping.
+        """
+        variables = {}
+        for t in self.tags:
+            if t.find('=') > 0:
+                parsed = t.split('=')
+                if len(parsed) != 2:
+                    continue
+                if parsed[0] is None or len(parsed[0]) == 0:
+                    continue
+                if parsed[1] is None or len(parsed[1]) == 0:
+                    continue
+                variables[parsed[0]] = parsed[1]
+        return variables
+
+
+# ######################################################################
+# TagsForFiles
+# ######################################################################
+class TagsForFiles:
+    def __init__(self):
+        self.tags = set()
+        self.file_records = []
+        pass
+
+    def add_path(self, path):
+        """
+        If the file record already exists, return it, otherwise create a new record and append it.
+        """
+        for f in self.file_records:
+            if f.path == path:
+                return f
+        # We didn't find it; therefore, create it.
+        f = FileRecord(id=len(self.file_records), path=path, file_exists=exists(path))
+        if not f.file_exists:
+            print(f"WARNING: Could not find file '{path}'")
+        self.file_records.append(f)
+        return f
+
+    def import_text_data(self,
+                         text_data):  # list of lines
+        """
+        Add data from lines of text to the base data structure
+        """
+        want_path_name = True  # The next non-blank line will be interpreted as a file path
+        want_tags = False  # The next non-blank line will be interpreted as a set of tags
+        record = None
+
+        for line in text_data:
+            stripped_line = line.strip()
+
+            if len(stripped_line) == 0:
+                want_path_name = True
+                want_tags = False
+            elif stripped_line[0] == '#':
+                if want_tags:
+                    record.comments.append(stripped_line)
+                pass
+            else:
+                if want_path_name:
+                    record = self.add_path(stripped_line)
+                    want_path_name = False
+                    want_tags = True
+                elif want_tags:
+                    tags_list = [t.strip() for t in stripped_line.split()]
+                    record.tags.update(tags_list)
+                    self.tags.update(tags_list)
+            pass
+
+    def import_text_data_from_file(self,
+                                   filename):
+        """
+        Add data from a text file to the base data structure
+        TODO: Parse the file directly instead of reading lines into a buffer and then parsing the buffer.
+        """
+        file = open(filename, encoding='utf-8')
+        data = file.readlines()
+        file.close()
+        self.import_text_data(data)
+
+    def build_tagged_files_map(self, only_existing=False):
+        """
+        Given a tag4files structure as defined by:
+        - 'tags' a set of tags, each a string
+        - 'file_records' a list of structs for each file:
+          - 'id' a numeric id
+          - 'path' filepath,
+          - 'file_exists' boolean, does the pathname correspond to an existing file,
+          - 'tags' a set of tags for this file
+          - 'comments' a list of strings, each preceded by '#'
+
+        Return a map, where each key is a tag and each value is a set of filenames
+        corresponding to files which have the key tag.
+
+        If only_existing is set to True, then only return existing files.
+
+        """
+        m = {}
+        for t in self.tags:
+            m[t] = set()
+        for f in self.file_records:
+            if only_existing and not f.file_exists:
+                continue
+            for t in f.tags:
+                m[t].add(f.path)
+        return m
+
+    def get_matching_tagged_files(self, tags, only_existing=False):
+        """
+        Return a set of files which match all the given tags
+        """
+        if tags is None or len(tags) == 0:
+            return []
+        tagged_files_map = self.build_tagged_files_map(only_existing)
+
+        try:
+            sets = [tagged_files_map[t] for t in tags]
+        except KeyError:
+            return []
+
+        first = True
+        out = None
+        for s in sets:
+            if first:
+                out = s
+                first = False
+            else:
+                out = out.intersection(s)
+        return out
+
+    def get_tags_from_files(self, files):
+        """
+        Return a list of tags which match the given files
+        """
+        tags = set()
+        for f in self.file_records:
+            if f.path in files:
+                for tag in f.tags:
+                    tags.add(tag)
+        return list(tags)
+
+    def find_record_for_path(self, pathname):
+        for f in self.file_records:
+            if f.path == pathname:
+                return f
+        return None
+
+    def get_missing_files(self):
+        """
+        Return a list of files which are in the index but can't be found on the filesystem.
+        """
+        out = []
+        for f in self.file_records:
+            if not f.file_exists:
+                out.append(f.path)
+            pass
+        return out
+
+    def prune(self):
+        """
+        Remove files which are in the index but can't be found on the filesystem.
+        """
+        new_files = []
+        not_found = 0
+        for f in self.file_records:
+            if f.file_exists:
+                new_files.append(f)
+            else:
+                not_found += 1
+        self.file_records = new_files
+        if not_found > 0:
+            print(f"{not_found} files pruned. Export and/or save recommended.")
+        pass
+
+    def write_file_records_to_file(self, filename):
+        """
+        Write the base data structure out to a text file.
+        """
+        self.file_records.sort(key=lambda r: r.path)
+        file = open(filename, "w", encoding="utf-8")
+
+        for f in self.file_records:
+            print(f.path, file=file)
+            for c in f.comments:
+                print(c, file=file)
+            tags = f.tags
+            tags_list = list(tags)
+            tags_list.sort()
+
+            p = paragraph_wrap(' '.join(tags_list), 72)
+
+            print(p, file=file)
+            print('', file=file)
+
+        file.close()
+
+    def find_duplicated_filenames(self):
+        """
+        Returns a list of filenames which are found in
+        more than one pathname in the base data.
+        TODO: Rewrite this whole function.
+        """
+        out = []
+        base_names = set()
+        for f in self.file_records:
+            b = basename(f.path)
+            if b in base_names:
+                out.append(f.path)
+            else:
+                base_names.add(b)
+        return out
+
+    def export(self):
+        """
+        Write data out to a .txt file
+        :return: the filename of the exported file.
+        """
+
+        now_file = make_time_stamped_file_name('tags', 'txt')
+
+        self.write_file_records_to_file(now_file)
+        print(f'Results written to {now_file}')
+        return now_file
+
+    def make_m3u_for_text_match(self, term):
+        """
+        Writes out a m3u which matches a term (case-insensitive)
+        """
+        files = self.find_matching_files_for_text_term(term)
+        paths = [f.path for f in files]
+        if len(paths) > 0:
+            filename = write_m3u_file(paths, 'playlist')
+            print(f'Wrote {len(paths)} files to {filename}')
+        else:
+            print('No records found.')
+        pass
+
+    def make_m3u_for_tags(self, tags):
+        """
+        Make a m3u playlist of all the files which contain all the passed
+        tags.
+        """
+        filelist = self.get_matching_tagged_files(tags, only_existing=True)
+        if len(filelist) > 0:
+            filename = write_m3u_file(filelist, 'playlist')
+            print(f'Wrote {len(filelist)} files to {filename}')
+        else:
+            print('No records found.')
+
+    def find_matching_files_for_text_term(self, term):
+        """
+        Return a list of file structs which match term (case-insensitive)
+        """
+        out = []
+        t = term.lower()
+        for file in self.file_records:
+            p = file.path.lower()
+            if t in p:
+                out.append(file)
+            pass
+        return out
+
+    def find_matching_tags_for_text_term(self, term):
+        """
+        Return a list of tags which match term (case-insensitive)
+        """
+        out = []
+        t = term.lower()
+        for tag in self.tags:
+            tag = tag.lower()
+            if t in tag:
+                out.append(tag)
+            pass
+        return out
+
+    def find_untracked(self, data_directory=None, extensions=None):
+        """
+        Find files which aren't accounted for yet.
+        """
+        if extensions is None:
+            extensions = audio_extensions
+        if data_directory is None:
+            data_directory = main_data_directory
+        untracked_files_list = []
+        known_files = set()
+
+        found_extensions = set()
+
+        for f in self.file_records:
+            known_files.add(f.path)
+
+        gen = os.walk(data_directory)
+        for rec in gen:
+            dir_path = rec[0]
+            dir_names = rec[1]
+            filenames = rec[2]
+            for filename in filenames:
+                path_tuple = os.path.splitext(filename)
+                if len(path_tuple[1]) > 0:
+                    ext = path_tuple[1][1:]
+                    if ext not in extensions:
+                        found_extensions.add(ext)
+                        pass
+                    pass
+
+                if not ends_with(filename, extensions):
+                    continue
+
+                path = os.path.join(dir_path, filename)
+                if path not in known_files:
+                    untracked_files_list.append(path)
+                    pass
+                pass
+            pass
+        filename = make_time_stamped_file_name('untracked', 'm3u')
+        f = open(filename, "w", encoding="utf-8")
+        # TODO Break this out from this function.
+        print('\n\n'.join(iter(untracked_files_list)), file=f)
+        f.close()
+        print(f'Wrote {len(untracked_files_list)} untracked files to {filename}')
+        print(f'Other extensions = {found_extensions}')
+
+    def move_if_tagged(self, ttag, ddir):
+        """
+        Find any files marked with the tag specified in ttag, and move them to a special
+        directory as specified in ddir under the current working directory.
+        """
+        to_move = []
+        n_moved = 0
+        dest_folder = str(os.path.join(main_data_directory, ddir))
+        if not os.path.exists(dest_folder):
+            os.mkdir(dest_folder)
+            pass
+        for f in self.file_records:
+            if ttag in f.tags:
+                file_dir = os.path.dirname(f.path).split('\\')[-1]
+                if file_dir != ddir:
+                    to_move.append(f)
+                    pass
+                pass
+            pass
+        for f in to_move:
+            file_name = os.path.split(f.path)[1]
+            src = f.path
+            dst = os.path.join(dest_folder, file_name)
+
+            if os.path.exists(dst):
+                print(f'I wanted to move `{src}` to `{dst}`, but `{dst}` already exists!')
+            else:
+                shutil.move(src, dst)
+                print(f'Moved `{src}` to `{dst}`')
+                n_moved += 1
+                f.path = dst
+                pass
+            pass
+        print(f'Moved {n_moved} files to {ddir}, out of {len(to_move)} requested.')
+        if n_moved > 0:
+            print('export() and/or save() recommended.')
+            pass
+        pass
+
+    def delete(self):
+        """
+        Find any files marked with the tag 'to-delete' and move them to a special
+        directory called '.trash'.
+        """
+        self.move_if_tagged('to-delete', '.trash')
+
+    def favorite(self):
+        """
+        Find any files marked with the tag 'move-to-favorites' and move them to a special
+        directory called '.favorites'.
+        """
+        self.move_if_tagged('move-to-favorites', '.favorites')
+
+    def archive(self):
+        """
+        Find any files marked with the tag 'to-archive' and move them to a special
+        directory called '.archive'.
+        """
+        self.move_if_tagged('to-archive', '.archive')
+
+    def extract_all_tags(self):
+        for f in self.file_records:
+            if f.file_exists:
+                new_tags = extract_tags(f.path)
+                f.tags.update(new_tags)
+        pass
+
+    def clean_all_tags(self):
+        for f in self.file_records:
+            old_tags = f.tags
+            new_tags = set()
+            for t in old_tags:
+                new_tags.add(transform_to_tag(t))
+                pass
+            f.tags = new_tags
+            pass
+        pass
+
+    def replace_tag(self, target, replace):
+        for f in self.file_records:
+            if target in f.tags:
+                f.tags.remove(target)
+                f.tags.add(replace)
+                pass
+            pass
+        if target in self.tags:
+            self.tags.remove(target)
+            self.tags.add(replace)
+            pass
+        pass
+
+    def count_tags(self):
+        tag_counts = {}
+        for f in self.file_records:
+            for t in f.tags:
+                if t not in tag_counts:
+                    tag_counts[t] = 0
+                    pass
+                tag_counts[t] += 1
+                pass
+            pass
+        out = sorted(tag_counts.items(), key=lambda i: i[1], reverse=True)
+        return out
 
 
 # Primary data structure
-_tags4files = create_t4f_data()
+mainTagsForFilesObj = TagsForFiles()
 
 
-def save_t4f_data_to_pickle(t4f_data=None, filename=None):
-    """Write data to the pickle file"""
-    if t4f_data is None:
-        t4f_data = _tags4files
-    if filename is None:
-        filename = pickle_file_path
-    pickle_file = open(filename, "wb")
-    pickle.dump(t4f_data, pickle_file)
-    pickle_file.close()
-    pass
+# ######################################################################
+# ######################################################################
+# ######################################################################
 
 
-def save():
-    save_t4f_data_to_pickle()
-    pass
-
-
-def load_t4f_data_from_pickle(filename=None):
-    """Read data from the pickle file"""
-    if filename is None:
-        filename = pickle_file_path
-    pickle_file = open(filename, "rb")
-    t4f_data = pickle.load(pickle_file)
-    pickle_file.close()
-    return t4f_data
-
-
-def create_or_load_t4f_data_from_pickle(filename=None):
-    """Load the data file if it exists, otherwise create it and save it out."""
-    if filename is None:
-        filename = pickle_file_path
-    file_exists = exists(filename)
-    if file_exists:
-        t4f_data = load_t4f_data_from_pickle(filename)
-    else:
-        t4f_data = create_t4f_data()
-        save_t4f_data_to_pickle(t4f_data, filename)
-    return t4f_data
-
-
-# Data parser, adds new data to an existing database
-def get_or_build_file_object(file_list, path):
-    """If the file record already exists, return it, otherwise create a new record and append it."""
-    for f in file_list:
-        if f['path'] == path:
-            return f
-    # We didn't find it; therefore, create it.
-    f = {
-        'id': len(file_list),
-        'path': path,
-        'exists': exists(path),
-        'tags': set(),
-        'comments': [],
-    }
-    if not f['exists']:
-        print(f"WARNING: Could not find file '{path}'")
-    file_list.append(f)
-    return f
-
-
-def get_variables_from_file_object(file_object):
+# ######################################################################
+# Utility functions
+# ######################################################################
+def paragraph_wrap(text_to_reflow, num_columns):
     """
-    Find all the tags in a file object in the form "<key>=<value>" and build a dict
-    which represents the mapping.
+    Restrict a string to <num_columns> width. Add newlines as necessary.
+    Compresses multiple spaces between words into single spaces.
+    TODO: Add test methods for this function.
     """
-    # TODO Make sure to scrub tags for degenerate values e.g. '=s', 'x=y=z' etc.
-    variables = {}
-    for t in file_object['tags']:
-        if t.find('=') > 0:
-            (k, v) = t.split('=')
-            variables[k] = v
-    return variables
-
-
-def import_text_data(t4f_data,
-                     text_data):  # list of lines
-    """Add data from text to the base data structure"""
-    want_path_name = True  # The next non-blank line will be interpreted as a file path
-    want_tags = False  # The next non-blank line will be interpreted as a set of tags
-    record = None
-
-    for line in text_data:
-        stripped_line = line.strip()
-
-        if len(stripped_line) == 0:
-            want_path_name = True
-            want_tags = False
-        elif stripped_line[0] == '#':
-            if want_tags:
-                record['comments'].append(stripped_line)
-            pass
-        else:
-            if want_path_name:
-                record = get_or_build_file_object(t4f_data['files'], stripped_line)
-                want_path_name = False
-                want_tags = True
-            elif want_tags:
-                tags_list = [t.strip() for t in stripped_line.split()]
-                record['tags'].update(tags_list)
-                t4f_data['tags'].update(tags_list)
-        pass
-
-
-def import_text_data_from_file(t4f_data,
-                               filename):
-    """Add data from a text file to the base data structure"""
-    file = open(filename, encoding='utf-8')
-    data = file.readlines()
-    file.close()
-    import_text_data(t4f_data, data)
-
-
-def build_tagged_files_map(t4f, only_existing=False):
-    """
-    Given a tag4files structure as defined by:
-    - 'tags' a set of tags, each a string
-    - 'files' a list of structs for each file:
-      - 'id' a numeric id
-      - 'path' filepath,
-      - 'exists' boolean, does the pathname correspond to an existing file,
-      - 'tags' a set of tags for this file
-      - 'comments' a list of strings, each preceded by '#'
-
-    Return a map, where each key is a tag and each value is a set of filenames
-    corresponding to files which have the key tag.
-
-    If only_existing is set to True, then only return existing files.
-
-    """
-    m = {}
-    for t in t4f['tags']:
-        m[t] = set()
-    for f in t4f['files']:
-        if only_existing and not f['exists']:
-            continue
-        for t in f['tags']:
-            m[t].add(f['path'])
-    return m
-
-
-def get_matching_tagged_files(tags, t4f=None, only_existing=False):
-    """Return a set of files which match all the given tags"""
-    if tags is None or len(tags) == 0:
-        return []
-    if t4f is None:
-        t4f = _tags4files
-    tagged_files_map = build_tagged_files_map(t4f, only_existing)
-
-    try:
-        sets = [tagged_files_map[t] for t in tags]
-    except KeyError:
-        return []
-
-    first = True
-    out = None
-    for s in sets:
-        if first:
-            out = s
-            first = False
-        else:
-            out = out.intersection(s)
-    return out
-
-
-def get_tags_from_files(files, t4f=None):
-    """Return a list of tags which match the given files"""
-    tags = set()
-    if t4f is None:
-        t4f = _tags4files
-    for f in t4f['files']:
-        if f['path'] in files:
-            for tag in f['tags']:
-                tags.add(tag)
-    return list(tags)
-
-
-def get_missing_files(t4f=None):
-    """Return a list of files which are in the index but can't be found on the filesystem."""
-    if t4f is None:
-        t4f = _tags4files
-    out = []
-    for f in t4f['files']:
-        if not f['exists']:
-            out.append(f['path'])
-        pass
-    return out
-
-
-def prune(t4f=None):
-    """Remove files which are in the index but can't be found on the filesystem."""
-    if t4f is None:
-        t4f = _tags4files
-    new_files = []
-    not_found = 0
-    for f in t4f['files']:
-        if f['exists']:
-            new_files.append(f)
-        else:
-            not_found += 1
-    t4f['files'] = new_files
-    if not_found > 0:
-        print(f"{not_found} files pruned. Export and/or save recommended.")
-    pass
-
-
-def paragraph_wrap(text_to_reflow, columns):
-    """
-    Restrict a string to <columns> width. Add newlines as necessary.
-    Assumes there is only one space between tokens.
-    """
-    sub_strings = text_to_reflow.split(' ')
+    sub_strings = list(filter(lambda c: len(c) > 0, text_to_reflow.split(' ')))
     out_list = []
     build = ''
     for i in range(0, len(sub_strings)):
         if len(sub_strings[i]) == 0:
             continue
-        if len(build) + len(sub_strings[i]) < columns:
+        if len(build) + len(sub_strings[i]) < num_columns:
             build += ' ' + sub_strings[i].strip()
             pass
         elif build == '':
@@ -284,49 +510,16 @@ def paragraph_wrap(text_to_reflow, columns):
         pass
     if len(build) > 0:
         out_list.append(build.strip())
-    return "\n".join(out_list)
-
-
-def write_to_file(t4f, filename):
-    """Write the base data structure out to a text file"""
-    t4f['files'].sort(key=lambda r: r['path'])
-    file = open(filename, "w", encoding="utf-8")
-
-    for f in t4f['files']:
-        print(f['path'], file=file)
-        for c in f['comments']:
-            print(c, file=file)
-        tags = f['tags']
-        tags_list = list(tags)
-        tags_list.sort()
-
-        p = paragraph_wrap(' '.join(tags_list), 72)
-
-        print(p, file=file)
-        print('', file=file)
-
-    file.close()
-
-
-def find_duplicated_filenames(t4f_data=None):
-    """
-    Returns a list of filenames which are found in
-    more than one pathname in the base data.
-    """
-    if t4f_data is None:
-        t4f_data = _tags4files
-    out = []
-    base_names = set()
-    for f in t4f_data['files']:
-        b = basename(f['path'])
-        if b in base_names:
-            out.append(f['path'])
-        else:
-            base_names.add(b)
-    return out
+    return '\n'.join(out_list)
 
 
 def ends_with(filename, extensions=None):
+    """
+    Returns true if filename ends with one of the given extensions.
+    :param filename:
+    :param extensions:
+    :return: True if the filename ends with an extension in <extensions>
+    """
     if extensions is None:
         extensions = []
     for ext in extensions:
@@ -337,82 +530,23 @@ def ends_with(filename, extensions=None):
 
 
 video_extensions = [
-    'wmv',
-    'mp4',
-    'mkv',
-    'mov',
-    'mpg',
-    'avi',
-    'm4v',
-    'MPG',
-    'MP4',
-    'MOV',
-    'mpeg'
+    'wmv', 'mp4', 'mkv', 'mov', 'mpg', 'avi', 'm4v', 'MPG', 'MP4', 'MOV', 'mpeg'
 ]
 
 audio_extensions = [
-    'ogg',
-    'wav',
-    'mp3'
+    'ogg', 'wav', 'mp3'
 ]
 
 
-def find_record_for_path(pathname, t4f_data=None):
-    if t4f_data is None:
-        t4f_data = _tags4files
-    for f in t4f_data['files']:
-        if f['path'] == pathname:
-            return f
-    return None
-
-
-def find_untracked(extensions=None, t4f_data=None):
-    """Find files which aren't accounted for yet."""
-    if t4f_data is None:
-        t4f_data = _tags4files
-    if extensions is None:
-        extensions = audio_extensions
-    untracked_files_list = []
-    known_files = set()
-
-    found_extensions = set()
-
-    for f in t4f_data['files']:
-        known_files.add(f['path'])
-
-    gen = os.walk(main_data_directory)
-    for rec in gen:
-        dir_path = rec[0]
-        dir_names = rec[1]
-        filenames = rec[2]
-        for filename in filenames:
-            path_tuple = os.path.splitext(filename)
-            if len(path_tuple[1]) > 0:
-                ext = path_tuple[1][1:]
-                if ext not in extensions:
-                    found_extensions.add(ext)
-                    pass
-                pass
-
-            if not ends_with(filename, extensions):
-                continue
-
-            path = os.path.join(dir_path, filename)
-            if path not in known_files:
-                untracked_files_list.append(path)
-                pass
-            pass
-        pass
-    filename = make_time_stamped_file_name('untracked', 'm3u')
-    f = open(filename, "w", encoding="utf-8")
-    print('\n\n'.join(untracked_files_list), file=f)
-    f.close()
-    print(f'Wrote {len(untracked_files_list)} untracked files to {filename}')
-    print(f'Other extensions = {found_extensions}')
-
-
 def make_time_stamped_file_name(prefix, suffix):
-    """Make a filename which contains the time and date of creation"""
+    """
+    Make a filename which contains the time and date of creation
+    :param prefix: a prefix to prepend to the new filename.
+    :param suffix: a suffix to append to the new filename.
+    :return: a filename in the form <prefix>-<date>-<time>.<suffix>
+             <date> will be in ISO-8601 format e.g. 2023-01-01.
+             <time> will be in the form <hour>-<minute>-<second>.
+    """
     if suffix is None:
         suffix = 'm3u'
     now = datetime.datetime.now()
@@ -429,123 +563,12 @@ def make_time_stamped_file_name(prefix, suffix):
     return os.path.join(main_data_directory, file_name)
 
 
-def make_m3u(tags, t4f_data=None):
-    """
-    Make a m3u playlist of all the files which contain all the passed
-    tags.
-    """
-    if t4f_data is None:
-        t4f_data = _tags4files
-    filename = make_time_stamped_file_name('playlist', 'm3u')
-    f = open(filename, "w", encoding="utf-8")
-    filelist = get_matching_tagged_files(tags, t4f_data, only_existing=True)
-    print('\n'.join(filelist), file=f)
-    f.close()
-    print(f'Wrote {len(filelist)} files to {filename}')
-
-
-def score_entries(entries, tag_values=None):
-    out = []
-    for entry in entries:
-        score = 0
-        for tag in entry['tags']:
-            if tag_values is not None and tag in tag_values:
-                score += tag_values[tag]
-            else:
-                score += 1
-                pass
-            pass
-        entry['score'] = score
-        out.append(entry)
-        pass
-    return out
-
-
-def top_rated_m3u(limit=0, t4f_data=None):
-    if t4f_data is None:
-        t4f_data = _tags4files
-    scored_entries = score_entries(t4f_data['files'])
-    sorted_entries = sorted(scored_entries, key=operator.itemgetter('score'), reverse=True)
-    if limit > 0:
-        sorted_entries = sorted_entries[0:limit]
-    file_list = [e['path'] for e in sorted_entries]
-
-    filename = make_time_stamped_file_name('playlist', 'm3u')
-
-    f = open(filename, "w", encoding="utf-8")
-    print('\n'.join(file_list), file=f)
-    f.close()
-    print(f'Wrote to {filename}')
-
-
-def export(t4f_data=None):
-    """Write data out to a .txt file"""
-    if t4f_data is None:
-        t4f_data = _tags4files
-
-    now_file = make_time_stamped_file_name('tags', 'txt')
-
-    write_to_file(t4f_data, now_file)
-    print(f'Results written to {now_file}')
-    return now_file
-
-
-def find_matching_files_for_text_term(term, t4f_data=None):
-    """Return a list of file structs which match term (case-insensitive)"""
-    if t4f_data is None:
-        t4f_data = _tags4files
-    out = []
-    t = term.lower()
-    for file in t4f_data['files']:
-        p = file['path'].lower()
-        if t in p:
-            out.append(file)
-        pass
-    return out
-
-
-def find_matching_tags_for_text_term(term, t4f_data=None):
-    """Return a list of tags which match term (case-insensitive)"""
-    if t4f_data is None:
-        t4f_data = _tags4files
-    out = []
-    t = term.lower()
-    for tag in t4f_data['tags']:
-        tag = tag.lower()
-        if t in tag:
-            out.append(tag)
-        pass
-    return out
-
-
 def write_m3u_file(path_list, prefix):
     m3u_filename = make_time_stamped_file_name(prefix, 'm3u')
     f = open(m3u_filename, "w", encoding="utf-8")
     print('\n'.join(path_list), file=f)
     f.close()
     return m3u_filename
-    pass
-
-
-def matching_m3u(term, t4f_data=None):
-    """Writes out a m3u which matches a term (case-insensitive)"""
-    if t4f_data is None:
-        t4f_data = _tags4files
-    files = find_matching_files_for_text_term(term, t4f_data)
-    paths = [f['path'] for f in files]
-    if len(paths) > 0:
-        filename = write_m3u_file(paths, 'playlist')
-        print(f'Wrote {len(paths)} files to {filename}')
-    else:
-        print('No records found.')
-    pass
-
-
-def add_tag(files, tag):
-    """Apply the given tag to each file in files."""
-    for file in files:
-        file['tags'].add(tag)
-        pass
     pass
 
 
@@ -585,136 +608,6 @@ def extract_tags(pathname):
     return out
 
 
-def extract_all_tags(t4f=None):
-    if t4f is None:
-        t4f = _tags4files
-    for f in t4f['files']:
-        if f['exists']:
-            new_tags = extract_tags(f['path'])
-            f['tags'].update(new_tags)
-
-
-def clean_all_tags(t4f=None):
-    if t4f is None:
-        t4f = _tags4files
-    for f in t4f['files']:
-        old_tags = f['tags']
-        new_tags = set()
-        for t in old_tags:
-            new_tags.add(transform_to_tag(t))
-            pass
-        f['tags'] = new_tags
-        pass
-    pass
-
-
-def replace_tag(target, replace, t4f=None):
-    if t4f is None:
-        t4f = _tags4files
-    for f in t4f['files']:
-        if target in f['tags']:
-            f['tags'].remove(target)
-            f['tags'].add(replace)
-            pass
-        pass
-    if target in t4f['tags']:
-        t4f['tags'].remove(target)
-        t4f['tags'].add(replace)
-        pass
-    pass
-
-
-def count_tags(t4f=None):
-    if t4f is None:
-        t4f = _tags4files
-    tag_counts = {}
-    for f in t4f['files']:
-        for t in f['tags']:
-            if t not in tag_counts:
-                tag_counts[t] = 0
-                pass
-            tag_counts[t] += 1
-            pass
-        pass
-    out = sorted(tag_counts.items(), key=lambda i: i[1], reverse=True)
-    return out
-
-
-def move_if_tagged(ttag, ddir, t4f=None):
-    """
-    Find any files marked with the tag specified in ttag, and move them to a special
-    directory as specified in ddir under the current working directory.
-    """
-    if t4f is None:
-        t4f = _tags4files
-    to_move = []
-    n_moved = 0
-    dest_folder = os.path.join(main_data_directory, ddir)
-    if not os.path.exists(dest_folder):
-        os.mkdir(dest_folder)
-        pass
-    for f in t4f['files']:
-        if ttag in f['tags']:
-            file_dir = os.path.dirname(f['path']).split('\\')[-1]
-            if file_dir != ddir:
-                to_move.append(f)
-                pass
-            pass
-        pass
-    for f in to_move:
-        file_name = os.path.split(f['path'])[1]
-        src = f['path']
-        dst = os.path.join(dest_folder, file_name)
-
-        if os.path.exists(dst):
-            print(f'I wanted to move `{src}` to `{dst}`, but `{dst}` already exists!')
-        else:
-            shutil.move(src, dst)
-            print(f'Moved `{src}` to `{dst}`')
-            n_moved += 1
-            f['path'] = dst
-            pass
-        pass
-    print(f'Moved {n_moved} files to {ddir}, out of {len(to_move)} requested.')
-    if n_moved > 0:
-        print('export() and/or save() recommended.')
-        pass
-    pass
-
-
-def delete(t4f=None):
-    """
-    Find any files marked with the tag 'to-delete' and move them to a special
-    directory called '.trash'.
-    """
-    if t4f is None:
-        t4f = _tags4files
-    move_if_tagged('to-delete', '.trash', t4f)
-    pass
-
-
-def favorite(t4f=None):
-    """
-    Find any files marked with the tag 'move-to-favorites' and move them to a special
-    directory called '.favorites'.
-    """
-    if t4f is None:
-        t4f = _tags4files
-    move_if_tagged('move-to-favorites', '.favorites', t4f)
-    pass
-
-
-def archive(t4f=None):
-    """
-    Find any files marked with the tag 'to-archive' and move them to a special
-    directory called '.archive'.
-    """
-    if t4f is None:
-        t4f = _tags4files
-    move_if_tagged('to-archive', '.archive', t4f)
-    pass
-
-
 # Data format is as follows:
 # A record consists of a sequence of non-blank lines.
 # - The first line contains the file path
@@ -724,30 +617,28 @@ def archive(t4f=None):
 # - A tag in the form '<k>=<v>' where k and v are both valid strings is considered
 #   to be a variable, with the name k and the value v.
 # - Complete records are separated by one or more blank lines.
-import_text_data_from_file(_tags4files, text_file_path)
+mainTagsForFilesObj.import_text_data_from_file(text_file_path)
 pp = pprint.PrettyPrinter(indent=2)
 
 print()
-print(f"Read {len(_tags4files['files'])} files.")
+print(f"Read {len(mainTagsForFilesObj.file_records)} files.")
 
 print()
-print(f"Read {len(_tags4files['tags'])} tags.")
+print(f"Read {len(mainTagsForFilesObj.tags)} tags.")
 
 print()
-missing_files = get_missing_files(_tags4files)
+missing_files = mainTagsForFilesObj.get_missing_files()
 print(f'{len(missing_files)} Missing files.')
-# pp.pprint(get_missing_files(_tags4files))
 
 print()
-possible_dupes = find_duplicated_filenames()
+possible_dupes = mainTagsForFilesObj.find_duplicated_filenames()
 print(f'{len(possible_dupes)} Possibly-duplicated files.')
-# pp.pprint(possible_dupes)
 
 print()
 
-export()
+mainTagsForFilesObj.export()
 
-find_untracked(video_extensions)
+mainTagsForFilesObj.find_untracked(main_data_directory, video_extensions)
 
 print('Use `export()` to write to a text file tags list')
 print('Use `save() to write to a pickle file')
@@ -764,8 +655,8 @@ print('Use `favorite()` to move files marked with the `move-to-favorites` tag to
 print('Use `archive()` to move files marked with the `to-archive` tag to `.archive`')
 
 # PySimpleGui core
-files_list = [f['path'] for f in _tags4files['files']]
-tag_list = list(_tags4files['tags'])
+files_list = [f.path for f in mainTagsForFilesObj.file_records]
+tag_list = list(mainTagsForFilesObj.tags)
 tag_list.sort()
 files_and_tags_window_layout = [
     [sg.Text(f'Base directory: {main_data_directory} | {len(files_list)} files | {len(tag_list)} tags')],
@@ -827,7 +718,7 @@ files_and_tags_window_layout = [
 
 def select_files_from_tags(window):
     tags_list = window['-TAGS-LISTBOX-'].get()
-    file_list = list(get_matching_tagged_files(tags_list))
+    file_list = list(mainTagsForFilesObj.get_matching_tagged_files(tags_list))
     if file_list is None:
         file_list = []
     if window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
@@ -839,7 +730,7 @@ def select_files_from_tags(window):
 
 def select_tags_from_files(window):
     selected_files_list = window['-FILES-LISTBOX-'].get()
-    tags_list = list(get_tags_from_files(selected_files_list))
+    tags_list = list(mainTagsForFilesObj.get_tags_from_files(selected_files_list))
     if tags_list is None:
         tags_list = []
     if window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
@@ -862,15 +753,15 @@ def update_tags_sort_order(window):
     tags_list = []
 
     if sort_order is 'Alpha':
-        tags_list = list(_tags4files['tags'])
+        tags_list = list(mainTagsForFilesObj.tags)
         tags_list.sort()
     elif sort_order is 'Selected':
-        tags_list = list(_tags4files['tags'])
+        tags_list = list(mainTagsForFilesObj.tags)
         augmented_tag_list = [(t, t in selected) for t in tags_list]
         sorted_tag_list = sorted(augmented_tag_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
         tags_list = [t[0] for t in sorted_tag_list]
     elif sort_order is 'Frequency':
-        tags_list = [item[0] for item in count_tags()]
+        tags_list = [item[0] for item in mainTagsForFilesObj.count_tags()]
 
     window['-TAGS-LISTBOX-'].update(tags_list)
     window['-TAGS-LISTBOX-'].set_value(selected)
@@ -882,10 +773,10 @@ def update_files_sort_order(window):
     selected = window['-FILES-LISTBOX-'].get()
     file_list = []
     if sort_order is 'Alpha':
-        file_list = [f['path'] for f in _tags4files['files']]
+        file_list = [f.path for f in mainTagsForFilesObj.file_records]
         file_list.sort()
     elif sort_order is 'Selected':
-        file_list = [f['path'] for f in _tags4files['files']]
+        file_list = [f.path for f in mainTagsForFilesObj.file_records]
         augmented_file_list = [(f, f in selected) for f in file_list]
         sorted_file_list = sorted(augmented_file_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
         file_list = [f[0] for f in sorted_file_list]
@@ -896,7 +787,7 @@ def update_files_sort_order(window):
 
 def do_export(window):
     window['FILE_OP_STATUS'].update('Writing export file')
-    file_name = export()
+    file_name = mainTagsForFilesObj.export()
     window['FILE_OP_STATUS'].update(f'Wrote {file_name}')
 
 
@@ -918,9 +809,9 @@ def do_find(window):
         window['-TAGS-LISTBOX-'].set_value([])
         window['-FILES-LISTBOX-'].set_value([])
     else:
-        file_matches = find_matching_files_for_text_term(find_text)
-        window['-FILES-LISTBOX-'].set_value([f['path'] for f in file_matches])
-        tag_matches = find_matching_tags_for_text_term(find_text)
+        file_matches = mainTagsForFilesObj.find_matching_files_for_text_term(find_text)
+        window['-FILES-LISTBOX-'].set_value([f.path for f in file_matches])
+        tag_matches = mainTagsForFilesObj.find_matching_tags_for_text_term(find_text)
         window['-TAGS-LISTBOX-'].set_value(tag_matches)
     update_selection_display(window)
 
@@ -934,8 +825,8 @@ def increment_edit_cursor(edit_records_window,
         cursor = new_value
     edit_records_window['EDIT_FILE_PREV_RECORD_BUTTON'].update(disabled=(cursor == 0))
     edit_records_window['EDIT_FILE_NEXT_RECORD_BUTTON'].update(disabled=(cursor == (len(file_records_list) - 1)))
-    edit_records_window['EDIT_FILE_RECORD_PATH'].update(value=file_records_list[cursor]['path'])
-    edit_records_window['EDIT_FILE_RECORD_TAGS'].update(values=file_records_list[cursor]['tags'])
+    edit_records_window['EDIT_FILE_RECORD_PATH'].update(value=file_records_list[cursor].path)
+    edit_records_window['EDIT_FILE_RECORD_TAGS'].update(values=file_records_list[cursor].tags)
     edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
     edit_records_window['EDIT_FILE_RECORD_TAG_EDIT'].update(value='')
     return cursor
@@ -944,14 +835,14 @@ def increment_edit_cursor(edit_records_window,
 def do_edit_selected_files(window):
     paths_list = window['-FILES-LISTBOX-'].get()
     # Gather the corresponding file records
-    file_records_list = [find_record_for_path(p) for p in paths_list]
+    file_records_list = [mainTagsForFilesObj.find_record_for_path(p) for p in paths_list]
     print(file_records_list)
     cursor = 0
     edit_window_layout = [
         [sg.InputText(paths_list[0],
                       size=(120, 1), key='EDIT_FILE_RECORD_PATH',
                       use_readonly_for_disable=True, disabled=True)],
-        [sg.Listbox(file_records_list[0]['tags'],
+        [sg.Listbox(file_records_list[0].tags,
                     size=(120, 10), key='EDIT_FILE_RECORD_TAGS',
                     enable_events=True)],
         [sg.InputText('', size=(90, 1), key='EDIT_FILE_RECORD_TAG_EDIT',
