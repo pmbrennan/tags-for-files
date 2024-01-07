@@ -677,7 +677,6 @@ class MainWindow:
     def run(self):
         while True:
             event, values = self.window.read()
-            print(event, values)
             # See if user wants to quit or window was closed
             if event == sg.WINDOW_CLOSED or event == 'Quit':
                 break
@@ -708,7 +707,7 @@ class MainWindow:
             elif event == 'EDIT_SELECTED_FILES_BUTTON':
                 self.do_edit_selected_files()
 
-            # Finish up by removing from the screen
+        # Finish up by removing from the screen
         self.window.close()
         if self.tags_for_files_obj.edited:
             self.tags_for_files_obj.export()
@@ -848,6 +847,10 @@ class EditFileWindow:
                           size=(120, 1), key='EDIT_FILE_RECORD_PATH',
                           use_readonly_for_disable=True, disabled=True),
              sg.Button('Play')],
+            [sg.Multiline(self.get_comments_at_cursor(),
+                          size=(120,3), key='EDIT_FILE_COMMENTS_MULTILINE',
+                          rstrip=False,
+                          enable_events=True, expand_x=True, expand_y=True)],
             [sg.Listbox(list_of_file_records[0].tags,
                         size=(120, 10), key='EDIT_FILE_RECORD_TAGS',
                         enable_events=True)],
@@ -873,6 +876,32 @@ class EditFileWindow:
                                 # return_keyboard_events=True
                                 )
         self.window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
+
+    @staticmethod
+    def clean_comments_list(comments_list):
+        for i in range(len(comments_list)):
+            comment = comments_list[i]
+            if len(comment) == 0:
+                comments_list[i] = '# '
+            elif comment[0] != '#':
+                comments_list[i] = '# ' + comment
+        return comments_list
+
+    def get_comments_at_cursor(self):
+        comments_list = self.clean_comments_list(
+            self.file_records[self.cursor].comments)
+        return '\n'.join(comments_list)
+
+    def put_comments_at_cursor(self):
+        text = self.window['EDIT_FILE_COMMENTS_MULTILINE'].get()
+        if text[-1] == '\n':
+            text = text[:-1]
+        comments_list = self.clean_comments_list(text.split('\n'))
+        self.file_records[self.cursor].comments = comments_list
+        new_value = '\n'.join(comments_list)
+        if new_value != text:
+            self.window['EDIT_FILE_COMMENTS_MULTILINE'].update(value=new_value)
+        self.file_records[self.cursor].edited = True
 
     def increment_cursor_position(self, increment):
         new_value = self.cursor + increment
@@ -917,6 +946,9 @@ class EditFileWindow:
                     if tag_ready and len(new_tag) > 0:
                         self.add_tag(new_tag)
                     self.window['EDIT_FILE_RECORD_TAG_EDIT'].update(value=new_edit_val)
+            elif event == 'EDIT_FILE_COMMENTS_MULTILINE':
+                # print(self.window['EDIT_FILE_COMMENTS_MULTILINE'].get())
+                self.put_comments_at_cursor()
 
         self.window.close()
 
