@@ -63,6 +63,13 @@ class TagsForFiles:
         if self.tags_file_path is not None:
             return os.path.dirname(self.tags_file_path)
 
+    def add_file_record(self, file_record):
+        file_record.id = len(self.file_records)
+        file_record.edited = False
+        self.edited = True
+        self.file_records.append(file_record)
+        self.tags.update(file_record.tags)
+
     def add_path(self, path):
         """
         Add a file record for the given path.
@@ -317,7 +324,7 @@ class TagsForFiles:
             pass
         return out
 
-    def find_untracked(self, data_directory=None, extensions=None):
+    def find_untracked(self, data_directory=None, extensions=None, write_m3u_file=True):
         """
         Find files which aren't accounted for yet.
         """
@@ -356,13 +363,16 @@ class TagsForFiles:
                     pass
                 pass
             pass
-        filename = Util.make_time_stamped_file_name('untracked', 'm3u')
-        f = open(filename, "w", encoding="utf-8")
-        # TODO Break this out from this function.
-        print('\n\n'.join(iter(untracked_files_list)), file=f)
-        f.close()
-        print(f'Wrote {len(untracked_files_list)} untracked files to {filename}')
-        print(f'Other extensions = {found_extensions}')
+
+        if write_m3u_file:
+            # TODO: Break this out from this function.
+            filename = Util.make_time_stamped_file_name('untracked', 'm3u')
+            f = open(filename, "w", encoding="utf-8")
+            print('\n\n'.join(iter(untracked_files_list)), file=f)
+            f.close()
+            print(f'Wrote {len(untracked_files_list)} untracked files to {filename}')
+            print(f'Other extensions = {found_extensions}')
+        return untracked_files_list
 
     def move_if_tagged(self, ttag, ddir):
         """
@@ -649,6 +659,9 @@ class MainWindow:
                 sg.Button('Edit selected files', key='EDIT_SELECTED_FILES_BUTTON', disabled=True),
                 sg.Text(size=(80, 1), key='SELECTION_STATUS_TEXT')
             ],
+            [
+                sg.Button('Edit untracked files', key='EDIT_UNTRACKED_FILES_BUTTON')
+            ],
             [sg.InputText('', size=(80, 1), key='FIND-ENTRY', enable_events=True),
              sg.Button('Find', key='FIND-BUTTON')],
             [
@@ -706,6 +719,8 @@ class MainWindow:
                 self.do_find()
             elif event == 'EDIT_SELECTED_FILES_BUTTON':
                 self.do_edit_selected_files()
+            elif event == 'EDIT_UNTRACKED_FILES_BUTTON':
+                self.do_edit_untracked_files()
 
         # Finish up by removing from the screen
         self.window.close()
@@ -804,6 +819,21 @@ class MainWindow:
             self.window['TAGS-LISTBOX'].set_value(tag_matches)
         self.update_selection_display()
 
+    def do_edit_untracked_files(self):
+        print('Editing untracked files')
+        files_list = self.tags_for_files_obj.find_untracked(self.tags_for_files_obj.get_base_directory(),
+                                                            write_m3u_file=False)
+        file_records_list = [FileRecord(0, path=f, file_exists=True) for f in files_list]
+        edit_files_window = EditFileWindow(file_records_list)
+        edit_files_window.run()
+
+        num_edited = 0
+        for file_record in file_records_list:
+            if file_record.edited:
+                num_edited += 1
+                self.tags_for_files_obj.add_file_record(file_record)
+        self.update_after_editing_files(num_edited)
+
     def do_edit_selected_files(self):
         paths_list = self.window['FILES-LISTBOX'].get()
         # Gather the corresponding file records
@@ -818,7 +848,9 @@ class MainWindow:
             if file_record.edited:
                 num_edited += 1
                 self.tags_for_files_obj.edited = True
+        self.update_after_editing_files(num_edited)
 
+    def update_after_editing_files(self, num_edited):
         print(f'Edited {num_edited} file records.')
         print(f'tags4files object edited = {self.tags_for_files_obj.edited}')
         if num_edited > 0 or self.tags_for_files_obj.edited:
@@ -848,7 +880,7 @@ class EditFileWindow:
                           use_readonly_for_disable=True, disabled=True),
              sg.Button('Play')],
             [sg.Multiline(self.get_comments_at_cursor(),
-                          size=(120,3), key='EDIT_FILE_COMMENTS_MULTILINE',
+                          size=(120, 3), key='EDIT_FILE_COMMENTS_MULTILINE',
                           rstrip=False,
                           enable_events=True, expand_x=True, expand_y=True)],
             [sg.Listbox(list_of_file_records[0].tags,
