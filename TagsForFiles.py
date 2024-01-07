@@ -435,6 +435,8 @@ class TagsForFiles:
         self.move_if_tagged('to-archive', '.archive')
 
     def extract_all_tags(self):
+        n_records = len(self.file_records)
+        index = 0
         for f in self.file_records:
             if f.file_exists:
                 new_tags = Util.extract_tags(f.path)
@@ -888,6 +890,7 @@ class EditFileWindow:
                         enable_events=True)],
             [sg.InputText('', size=(90, 1), key='EDIT_FILE_RECORD_TAG_EDIT',
                           enable_events=True, focus=True, expand_x=True),
+             sg.Checkbox('Apply to directory', key='EDIT_FILE_APPLY_TAG_TO_DIRECTORY'),
              sg.Button('Add', key='EDIT_FILE_RECORD_ADD_TAG',
                        bind_return_key=True)],
             [sg.HorizontalSeparator()],
@@ -985,9 +988,17 @@ class EditFileWindow:
         self.window.close()
 
     def add_tag(self, tag):
-        print(f'Accepting new tag <{tag}>')
         self.file_records[self.cursor].tags.add(tag)
         self.file_records[self.cursor].edited = True
+
+        apply_to_directory = self.window['EDIT_FILE_APPLY_TAG_TO_DIRECTORY'].get()
+        if apply_to_directory:
+            directory = os.path.dirname(self.file_records[self.cursor].path)
+            for file_record in self.file_records:
+                if file_record.path.startswith(directory):
+                    file_record.tags.add(tag)
+                    file_record.edited = True
+
         self.window['EDIT_FILE_RECORD_TAGS'].update(values=self.file_records[self.cursor].tags)
 
 
