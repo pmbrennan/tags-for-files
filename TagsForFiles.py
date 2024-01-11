@@ -329,7 +329,7 @@ class TagsForFiles:
         Find files which aren't accounted for yet.
         """
         if extensions is None:
-            extensions = Util.audio_extensions
+            extensions = Util.media_extensions
         if data_directory is None:
             data_directory = main_data_directory
         untracked_files_list = []
@@ -499,6 +499,8 @@ class Util:
     audio_extensions = [
         'ogg', 'wav', 'mp3'
     ]
+
+    media_extensions = video_extensions + audio_extensions
 
     @staticmethod
     def paragraph_wrap(text_to_reflow, num_columns):
@@ -825,6 +827,11 @@ class MainWindow:
         print('Editing untracked files')
         files_list = self.tags_for_files_obj.find_untracked(self.tags_for_files_obj.get_base_directory(),
                                                             write_m3u_file=False)
+
+        if len(files_list) == 0:
+            print('no untracked files found')
+            return
+
         file_records_list = [FileRecord(0, path=f, file_exists=True) for f in files_list]
         edit_files_window = EditFileWindow(file_records_list)
         edit_files_window.run()
@@ -879,8 +886,8 @@ class EditFileWindow:
         self.layout = [
             [sg.InputText(list_of_file_records[0].path,
                           size=(120, 1), key='EDIT_FILE_RECORD_PATH',
-                          use_readonly_for_disable=True, disabled=True),
-             sg.Button('Play')],
+                          use_readonly_for_disable=True, disabled=True)],
+            [sg.Button('Play')],
             [sg.Multiline(self.get_comments_at_cursor(),
                           size=(120, 3), key='EDIT_FILE_COMMENTS_MULTILINE',
                           rstrip=False,
@@ -1056,6 +1063,6 @@ if __name__ == '__main__':
 
     mainTagsForFilesObj.export()
 
-    mainTagsForFilesObj.find_untracked(main_data_directory, Util.video_extensions)
+    mainTagsForFilesObj.find_untracked(main_data_directory, Util.media_extensions)
 
     MainWindow(mainTagsForFilesObj).run()
