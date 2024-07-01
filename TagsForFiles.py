@@ -14,6 +14,7 @@ import PySimpleGUI as sg
 import tinytag
 from tinytag import TinyTag
 
+# TODO: Investigate mp3tag (https://mp3tag.de/en)
 
 # ######################################################################
 # FileRecord
@@ -365,13 +366,16 @@ class TagsForFiles:
             pass
 
         if write_m3u_file:
-            # TODO: Break this out from this function.
-            filename = Util.make_time_stamped_file_name('untracked', 'm3u')
-            f = open(filename, "w", encoding="utf-8")
-            print('\n\n'.join(iter(untracked_files_list)), file=f)
-            f.close()
-            print(f'Wrote {len(untracked_files_list)} untracked files to {filename}')
-            print(f'Other extensions = {found_extensions}')
+            if len(untracked_files_list) > 0:
+                # TODO: Break this out from this function.
+                filename = Util.make_time_stamped_file_name('untracked', 'm3u')
+                f = open(filename, "w", encoding="utf-8")
+                print('\n\n'.join(iter(untracked_files_list)), file=f)
+                f.close()
+                print(f'Wrote {len(untracked_files_list)} untracked files to {filename}')
+                print(f'Other extensions = {found_extensions}')
+            else:
+                print('No untracked files were found.')
         return untracked_files_list
 
     def move_if_tagged(self, ttag, ddir):
@@ -1031,8 +1035,8 @@ if __name__ == '__main__':
     text_file_path = os.path.abspath(text_file_path)
     print(f'text_file_path = {text_file_path}')
 
-    mainTagsForFilesObj = TagsForFiles(text_file_path)
-    print(f'tags file base = {mainTagsForFilesObj.get_base_directory()}')
+    mainobj = TagsForFiles(text_file_path)
+    print(f'tags file base = {mainobj.get_base_directory()}')
 
     # Data format is as follows:
     # A record consists of a sequence of non-blank lines.
@@ -1046,23 +1050,23 @@ if __name__ == '__main__':
     pp = pprint.PrettyPrinter(indent=2)
 
     print()
-    print(f"Read {len(mainTagsForFilesObj.file_records)} files.")
+    print(f"Read {len(mainobj.file_records)} files.")
 
     print()
-    print(f"Read {len(mainTagsForFilesObj.tags)} tags.")
+    print(f"Read {len(mainobj.tags)} tags.")
 
     print()
-    missing_files = mainTagsForFilesObj.get_missing_files()
+    missing_files = mainobj.get_missing_files()
     print(f'{len(missing_files)} Missing files.')
 
     print()
-    possible_dupes = mainTagsForFilesObj.find_duplicated_filenames()
+    possible_dupes = mainobj.find_duplicated_filenames()
     print(f'{len(possible_dupes)} Possibly-duplicated files.')
 
     print()
 
-    mainTagsForFilesObj.export()
+    mainobj.export()
 
-    mainTagsForFilesObj.find_untracked(main_data_directory, Util.media_extensions)
+    mainobj.find_untracked(main_data_directory, Util.media_extensions)
 
-    MainWindow(mainTagsForFilesObj).run()
+    MainWindow(mainobj).run()
