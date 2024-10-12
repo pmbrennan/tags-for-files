@@ -10,7 +10,6 @@ import sys
 from os.path import basename
 from os.path import exists
 
-import PySimpleGUI as sg
 import tinytag
 from tinytag import TinyTag
 
@@ -1069,4 +1068,4 @@ if __name__ == '__main__':
 
     mainobj.find_untracked(main_data_directory, Util.media_extensions)
 
-    MainWindow(mainobj).run()
+    # MainWindow(mainobj).run()
