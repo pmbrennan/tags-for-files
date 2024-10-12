@@ -127,6 +127,15 @@ class TagsForFiles:
         file.close()
         self.import_text_data(data)
 
+    def get_untagged_files(self, only_existing=False):
+        m = []
+        for f in self.file_records:
+            if only_existing and not f.file_exists:
+                continue
+            elif len(f.tags) == 0:
+                m.append(f.path)
+        return m
+
     def build_tagged_files_map(self, only_existing=False):
         """
         Given a tag4files structure as defined by:
@@ -270,6 +279,17 @@ class TagsForFiles:
         self.write_file_records_to_file(now_file)
         print(f'Results written to {now_file}')
         return now_file
+
+    def make_m3u_for_untagged_files(self):
+        paths = self.get_untagged_files()
+        paths.sort()
+        if len(paths) > 0:
+            filename = Util.write_m3u_file(paths, 'playlist')
+            print(f'Wrote {len(paths)} files to {filename}')
+        else:
+            print('No records found.')
+        pass
+
 
     def make_m3u_for_text_match(self, term):
         """
@@ -621,398 +641,6 @@ class Util:
 
 
 # ######################################################################
-# MainWindow
-# ######################################################################
-class MainWindow:
-    def __init__(self, tags_for_files_obj: TagsForFiles):
-        self.tags_for_files_obj = tags_for_files_obj
-        files_list = [record.path for record in tags_for_files_obj.file_records]
-        tag_list = list(tags_for_files_obj.tags)
-        tag_list.sort()
-        base = tags_for_files_obj.get_base_directory()
-        self.layout = [
-            [sg.Text(f'Base directory: {base} | {len(files_list)} files | {len(tag_list)} tags')],
-            [sg.HorizontalSeparator()],
-
-            [sg.Column([[sg.Text('ALL FILES:'),
-                         sg.DropDown(values=['Alpha', 'Selected'],
-                                     default_value='Alpha',
-                                     enable_events=True,
-                                     readonly=True,
-                                     size=30, key='FILES-DROPDOWN-SORT')],
-                        [sg.Listbox(values=files_list,
-                                    size=(100, 20),
-                                    key='FILES-LISTBOX',
-                                    select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
-                                    enable_events=True,
-                                    horizontal_scroll=True,
-                                    expand_x=True, expand_y=True)
-                         ]], expand_x=True, expand_y=True),
-             sg.Column([[sg.Text('ALL TAGS:'),
-                         sg.DropDown(values=['Alpha', 'Frequency', 'Selected'],
-                                     default_value='Alpha',
-                                     enable_events=True,
-                                     readonly=True,
-                                     size=30, key='TAGS-DROPDOWN-SORT')],
-                        [sg.Listbox(values=tag_list,
-                                    size=(45, 20),
-                                    key='TAGS-LISTBOX',
-                                    select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED,
-                                    enable_events=True,
-                                    horizontal_scroll=True,
-                                    expand_x=True, expand_y=True)]], expand_x=True, expand_y=True)],
-
-            [
-                sg.Button('Edit selected files', key='EDIT_SELECTED_FILES_BUTTON', disabled=True),
-                sg.Text(size=(80, 1), key='SELECTION_STATUS_TEXT')
-            ],
-            [
-                sg.Button('Edit untracked files', key='EDIT_UNTRACKED_FILES_BUTTON')
-            ],
-            [sg.InputText('', size=(80, 1), key='FIND-ENTRY', enable_events=True),
-             sg.Button('Find', key='FIND-BUTTON')],
-            [
-                sg.Button('Clear files selection', key='-CLEAR-FILES-',
-                          tooltip='Unselect all files'),
-                sg.Button('Clear tags selection', key='-CLEAR-TAGS-',
-                          tooltip='Unselect all tags'),
-                sg.Button('Files from Tags', key='SELECT-FILES-FROM-TAGS',
-                          tooltip='Select files which match all of the selected tags'),
-                sg.Button('Tags from Files', key='SELECT-TAGS-FROM-FILES',
-                          tooltip='Select all tags which can be found in any of the selected files'),
-                sg.DropDown(values=['Replace', 'Expand'], default_value='Replace', readonly=True,
-                            tooltip='Replace current selection or expand it', size=30,
-                            key='REPLACE-OR-EXPAND-SELECTION')
-            ],
-            [
-                sg.Button('Export entire file list', key='EXPORT-BUTTON', ),
-                sg.Button('Make a playlist of selected files', key='PLAYLIST-BUTTON', ),
-                sg.InputText(size=(90, 1), key='FILE_OP_STATUS', use_readonly_for_disable=True, disabled=True),
-            ],
-            [sg.HorizontalSeparator()],
-            [sg.Button('Quit')]
-        ]
-        self.window = sg.Window('Tags For Files', self.layout, resizable=True)
-
-    def run(self):
-        while True:
-            event, values = self.window.read()
-            # See if user wants to quit or window was closed
-            if event == sg.WINDOW_CLOSED or event == 'Quit':
-                break
-            elif event == 'FILES-LISTBOX' or event == 'TAGS-LISTBOX':
-                self.update_selection_display()
-            elif event == '-CLEAR-FILES-':
-                self.window['FILES-LISTBOX'].set_value([])
-                self.update_selection_display()
-            elif event == '-CLEAR-TAGS-':
-                self.window['TAGS-LISTBOX'].set_value([])
-                self.update_selection_display()
-            elif event == 'SELECT-FILES-FROM-TAGS':
-                self.select_files_from_tags()
-                self.update_selection_display()
-            elif event == 'SELECT-TAGS-FROM-FILES':
-                self.select_tags_from_files()
-                self.update_selection_display()
-            elif event == 'TAGS-DROPDOWN-SORT':
-                self.update_tags_sort_order()
-            elif event == 'FILES-DROPDOWN-SORT':
-                self.update_files_sort_order()
-            elif event == 'EXPORT-BUTTON':
-                self.do_export()
-            elif event == 'PLAYLIST-BUTTON':
-                self.do_make_playlist()
-            elif event == 'FIND-BUTTON':
-                self.do_find()
-            elif event == 'EDIT_SELECTED_FILES_BUTTON':
-                self.do_edit_selected_files()
-            elif event == 'EDIT_UNTRACKED_FILES_BUTTON':
-                self.do_edit_untracked_files()
-
-        # Finish up by removing from the screen
-        self.window.close()
-        if self.tags_for_files_obj.edited:
-            self.tags_for_files_obj.export()
-        pass
-
-    def select_files_from_tags(self):
-        tags_list = self.window['TAGS-LISTBOX'].get()
-        file_list = list(self.tags_for_files_obj.get_matching_tagged_files(tags_list))
-        if file_list is None:
-            file_list = []
-        if self.window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
-            for f in self.window['FILES-LISTBOX'].get():
-                if f not in file_list:
-                    file_list.append(f)
-        self.window['FILES-LISTBOX'].set_value(file_list)
-
-    def update_selection_display(self):
-        n_selected_files = len(self.window['FILES-LISTBOX'].get())
-        n_selected_tags = len(self.window['TAGS-LISTBOX'].get())
-        self.window['SELECTION_STATUS_TEXT'].update(f'Selected: {n_selected_files} files | {n_selected_tags} tags')
-        self.window['EDIT_SELECTED_FILES_BUTTON'].update(disabled=(n_selected_files == 0))
-
-    def select_tags_from_files(self):
-        selected_files_list = self.window['FILES-LISTBOX'].get()
-        tags_list = list(self.tags_for_files_obj.get_tags_from_files(selected_files_list))
-        if tags_list is None:
-            tags_list = []
-        if self.window['REPLACE-OR-EXPAND-SELECTION'].get() == 'Expand':
-            for t in self.window['TAGS-LISTBOX'].get():
-                if t not in tags_list:
-                    tags_list.append(t)
-        self.window['TAGS-LISTBOX'].set_value(tags_list)
-
-    def update_tags_sort_order(self):
-        sort_order = self.window['TAGS-DROPDOWN-SORT'].get()
-        selected = self.window['TAGS-LISTBOX'].get()
-        tags_list = []
-
-        if sort_order == 'Alpha':
-            tags_list = list(self.tags_for_files_obj.tags)
-            tags_list.sort()
-        elif sort_order == 'Selected':
-            tags_list = list(self.tags_for_files_obj.tags)
-            augmented_tag_list = [(t, t in selected) for t in tags_list]
-            sorted_tag_list = sorted(augmented_tag_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
-            tags_list = [t[0] for t in sorted_tag_list]
-        elif sort_order == 'Frequency':
-            tags_list = [item[0] for item in self.tags_for_files_obj.count_tags()]
-        self.window['TAGS-LISTBOX'].update(tags_list)
-        self.window['TAGS-LISTBOX'].set_value(selected)
-        self.update_selection_display()
-
-    def update_files_sort_order(self):
-        sort_order = self.window['FILES-DROPDOWN-SORT'].get()
-        selected = self.window['FILES-LISTBOX'].get()
-        file_list = []
-        if sort_order == 'Alpha':
-            file_list = [f.path for f in self.tags_for_files_obj.file_records]
-            file_list.sort()
-        elif sort_order == 'Selected':
-            file_list = [f.path for f in self.tags_for_files_obj.file_records]
-            augmented_file_list = [(f, f in selected) for f in file_list]
-            sorted_file_list = sorted(augmented_file_list, key=lambda x: f' {x[0]}' if x[1] else x[0])
-            file_list = [f[0] for f in sorted_file_list]
-        self.window['FILES-LISTBOX'].update(file_list)
-        self.window['FILES-LISTBOX'].set_value(selected)
-        self.update_selection_display()
-
-    def do_export(self):
-        self.window['FILE_OP_STATUS'].update('Writing export file')
-        file_name = self.tags_for_files_obj.export()
-        self.window['FILE_OP_STATUS'].update(f'Wrote {file_name}')
-
-    def do_make_playlist(self):
-        self.window['FILE_OP_STATUS'].update('Writing m3u file')
-        files_list = self.window['FILES-LISTBOX'].get()
-        filename = Util.make_time_stamped_file_name('playlist', 'm3u')
-        f = open(filename, 'w', encoding='utf-8')
-        print('\n'.join(files_list), file=f)
-        f.close()
-        status_message = f'Wrote {len(files_list)} files to {filename}'
-        print(status_message)
-        self.window['FILE_OP_STATUS'].update(status_message)
-
-    def do_find(self):
-        find_text = self.window['FIND-ENTRY'].get()
-        if len(find_text) == 0:
-            self.window['TAGS-LISTBOX'].set_value([])
-            self.window['FILES-LISTBOX'].set_value([])
-        else:
-            file_matches = self.tags_for_files_obj.find_matching_files_for_text_term(find_text)
-            self.window['FILES-LISTBOX'].set_value([f.path for f in file_matches])
-            tag_matches = self.tags_for_files_obj.find_matching_tags_for_text_term(find_text)
-            self.window['TAGS-LISTBOX'].set_value(tag_matches)
-        self.update_selection_display()
-
-    def do_edit_untracked_files(self):
-        print('Editing untracked files')
-        files_list = self.tags_for_files_obj.find_untracked(self.tags_for_files_obj.get_base_directory(),
-                                                            write_m3u_file=False)
-
-        if len(files_list) == 0:
-            print('no untracked files found')
-            return
-
-        file_records_list = [FileRecord(0, path=f, file_exists=True) for f in files_list]
-        edit_files_window = EditFileWindow(file_records_list)
-        edit_files_window.run()
-
-        num_edited = 0
-        for file_record in file_records_list:
-            if file_record.edited:
-                num_edited += 1
-                self.tags_for_files_obj.add_file_record(file_record)
-        self.update_after_editing_files(num_edited)
-
-    def do_edit_selected_files(self):
-        paths_list = self.window['FILES-LISTBOX'].get()
-        # Gather the corresponding file records
-        file_records_list = [self.tags_for_files_obj.find_record_for_path(p) for p in paths_list]
-        edit_files_window = EditFileWindow(file_records_list)
-        edit_files_window.run()
-
-        # Update
-        num_edited = 0
-        for file_record in file_records_list:
-            self.tags_for_files_obj.tags.update(file_record.tags)
-            if file_record.edited:
-                num_edited += 1
-                self.tags_for_files_obj.edited = True
-        self.update_after_editing_files(num_edited)
-
-    def update_after_editing_files(self, num_edited):
-        print(f'Edited {num_edited} file records.')
-        print(f'tags4files object edited = {self.tags_for_files_obj.edited}')
-        if num_edited > 0 or self.tags_for_files_obj.edited:
-            print(f'Export recommended.')
-        # TODO: Update Window better than this
-        files_list = [record.path for record in self.tags_for_files_obj.file_records]
-        tag_list = list(self.tags_for_files_obj.tags)
-        tag_list.sort()
-        self.window['FILES-LISTBOX'].update(values=files_list)
-        self.window['FILES-LISTBOX'].set_value([])
-        self.window['TAGS-LISTBOX'].update(values=tag_list)
-        self.window['TAGS-LISTBOX'].set_value([])
-        self.window['FIND-ENTRY'].update('')
-        self.window.refresh()
-
-
-# ######################################################################
-# EditFileWindow
-# ######################################################################
-class EditFileWindow:
-    def __init__(self, list_of_file_records):
-        self.file_records = list_of_file_records
-        self.cursor = 0
-        self.layout = [
-            [sg.InputText(list_of_file_records[0].path,
-                          size=(120, 1), key='EDIT_FILE_RECORD_PATH',
-                          use_readonly_for_disable=True, disabled=True)],
-            [sg.Button('Play')],
-            [sg.Multiline(self.get_comments_at_cursor(),
-                          size=(120, 3), key='EDIT_FILE_COMMENTS_MULTILINE',
-                          rstrip=False,
-                          enable_events=True, expand_x=True, expand_y=True)],
-            [sg.Listbox(list_of_file_records[0].tags,
-                        size=(120, 10), key='EDIT_FILE_RECORD_TAGS',
-                        enable_events=True)],
-            [sg.InputText('', size=(90, 1), key='EDIT_FILE_RECORD_TAG_EDIT',
-                          enable_events=True, focus=True, expand_x=True),
-             sg.Checkbox('Apply to directory', key='EDIT_FILE_APPLY_TAG_TO_DIRECTORY'),
-             sg.Button('Add', key='EDIT_FILE_RECORD_ADD_TAG',
-                       bind_return_key=True)],
-            [sg.HorizontalSeparator()],
-            [
-                sg.Button('Prev Record', key='EDIT_FILE_PREV_RECORD_BUTTON', disabled=True,
-                          expand_x=True),
-                sg.Button('Next Record', key='EDIT_FILE_NEXT_RECORD_BUTTON',
-                          disabled=len(list_of_file_records) < 2,
-                          expand_x=True),
-            ],
-            [sg.HorizontalSeparator()],
-            [sg.Button('Back')]
-        ]
-        edit_window_title = f'Editing {len(list_of_file_records)} File Records'
-        self.window = sg.Window(edit_window_title, self.layout,
-                                modal=True, finalize=True,
-                                resizable=True,
-                                # return_keyboard_events=True
-                                )
-        self.window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
-
-    @staticmethod
-    def clean_comments_list(comments_list):
-        for i in range(len(comments_list)):
-            comment = comments_list[i]
-            if len(comment) == 0:
-                comments_list[i] = '# '
-            elif comment[0] != '#':
-                comments_list[i] = '# ' + comment
-        return comments_list
-
-    def get_comments_at_cursor(self):
-        comments_list = self.clean_comments_list(
-            self.file_records[self.cursor].comments)
-        return '\n'.join(comments_list)
-
-    def put_comments_at_cursor(self):
-        text = self.window['EDIT_FILE_COMMENTS_MULTILINE'].get()
-        if text[-1] == '\n':
-            text = text[:-1]
-        comments_list = self.clean_comments_list(text.split('\n'))
-        self.file_records[self.cursor].comments = comments_list
-        new_value = '\n'.join(comments_list)
-        if new_value != text:
-            self.window['EDIT_FILE_COMMENTS_MULTILINE'].update(value=new_value)
-        self.file_records[self.cursor].edited = True
-
-    def increment_cursor_position(self, increment):
-        new_value = self.cursor + increment
-        if 0 <= new_value < len(self.file_records):
-            self.cursor = new_value
-        self.window['EDIT_FILE_PREV_RECORD_BUTTON'].update(disabled=(self.cursor == 0))
-        self.window['EDIT_FILE_NEXT_RECORD_BUTTON'].update(
-            disabled=(self.cursor == (len(self.file_records) - 1)))
-        self.window['EDIT_FILE_RECORD_PATH'].update(value=self.file_records[self.cursor].path)
-        self.window['EDIT_FILE_RECORD_TAGS'].update(values=self.file_records[self.cursor].tags)
-        self.window['EDIT_FILE_RECORD_TAG_EDIT'].set_focus(True)
-        self.window['EDIT_FILE_RECORD_TAG_EDIT'].update(value='')
-
-    def run(self):
-        while True:
-            event, values = self.window.read()
-            # print(event, values)
-            if event == sg.WINDOW_CLOSED or event == 'Back':
-                break
-            elif event == 'Play':
-                path = self.file_records[self.cursor].path
-                os.startfile(path)
-            elif event == 'EDIT_FILE_PREV_RECORD_BUTTON':
-                self.increment_cursor_position(-1)
-            elif event == 'EDIT_FILE_NEXT_RECORD_BUTTON':
-                self.increment_cursor_position(1)
-            elif event == 'EDIT_FILE_RECORD_ADD_TAG':
-                s = self.window['EDIT_FILE_RECORD_TAG_EDIT'].get()
-                new_tag = Util.transform_to_tag(s.strip())
-                tag_ready = len(new_tag) > 0
-                new_edit_val = '' if tag_ready else new_tag
-                if tag_ready:
-                    self.add_tag(new_tag)
-                self.window['EDIT_FILE_RECORD_TAG_EDIT'].update(value=new_edit_val)
-            elif event == 'EDIT_FILE_RECORD_TAG_EDIT':
-                s = self.window['EDIT_FILE_RECORD_TAG_EDIT'].get()
-                if len(s.strip()) > 0:
-                    c = s[-1]
-                    tag_ready = c == ' '
-                    new_tag = Util.transform_to_tag(s.strip())
-                    new_edit_val = '' if tag_ready else new_tag
-                    if tag_ready and len(new_tag) > 0:
-                        self.add_tag(new_tag)
-                    self.window['EDIT_FILE_RECORD_TAG_EDIT'].update(value=new_edit_val)
-            elif event == 'EDIT_FILE_COMMENTS_MULTILINE':
-                # print(self.window['EDIT_FILE_COMMENTS_MULTILINE'].get())
-                self.put_comments_at_cursor()
-
-        self.window.close()
-
-    def add_tag(self, tag):
-        self.file_records[self.cursor].tags.add(tag)
-        self.file_records[self.cursor].edited = True
-
-        apply_to_directory = self.window['EDIT_FILE_APPLY_TAG_TO_DIRECTORY'].get()
-        if apply_to_directory:
-            directory = os.path.dirname(self.file_records[self.cursor].path)
-            for file_record in self.file_records:
-                if file_record.path.startswith(directory):
-                    file_record.tags.add(tag)
-                    file_record.edited = True
-
-        self.window['EDIT_FILE_RECORD_TAGS'].update(values=self.file_records[self.cursor].tags)
-
-
-# ######################################################################
 # Main Loop
 # ######################################################################
 if __name__ == '__main__':
@@ -1068,4 +696,6 @@ if __name__ == '__main__':
 
     mainobj.find_untracked(main_data_directory, Util.media_extensions)
 
-    # MainWindow(mainobj).run()
+    
+    print(f"{mainobj=}")
+    
