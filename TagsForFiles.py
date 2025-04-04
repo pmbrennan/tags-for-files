@@ -284,7 +284,7 @@ class TagsForFiles:
         paths = self.get_untagged_files()
         paths.sort()
         if len(paths) > 0:
-            filename = Util.write_m3u_file(paths, 'playlist')
+            filename = Util.write_m3u_file(paths, 'playlist', header='Untaggedd files')
             print(f'Wrote {len(paths)} files to {filename}')
         else:
             print('No records found.')
@@ -299,7 +299,7 @@ class TagsForFiles:
         paths = [f.path for f in files]
         paths.sort()
         if len(paths) > 0:
-            filename = Util.write_m3u_file(paths, 'playlist')
+            filename = Util.write_m3u_file(paths, 'playlist', header=f"Files matching: {term}")
             print(f'Wrote {len(paths)} files to {filename}')
         else:
             print('No records found.')
@@ -313,7 +313,7 @@ class TagsForFiles:
         filelist = list(self.get_matching_tagged_files(tags, only_existing=True))
         filelist.sort()
         if len(filelist) > 0:
-            filename = Util.write_m3u_file(filelist, 'playlist')
+            filename = Util.write_m3u_file(filelist, 'playlist', f"Files matching tags: {tags}")
             print(f'Wrote {len(filelist)} files to {filename}')
         else:
             print('No records found.')
@@ -595,9 +595,10 @@ class Util:
         return os.path.join(main_data_directory, file_name)
 
     @staticmethod
-    def write_m3u_file(path_list, prefix):
+    def write_m3u_file(path_list, prefix, header=""):
         m3u_filename = Util.make_time_stamped_file_name(prefix, 'm3u')
         f = open(m3u_filename, "w", encoding="utf-8")
+        print(f'# {header}', file=f)
         print('\n'.join(path_list), file=f)
         f.close()
         return m3u_filename
