@@ -126,6 +126,15 @@ class TagsForFiles:
         file.close()
         self.import_text_data(data)
 
+    def get_untagged_files(self, only_existing=False):
+        m = []
+        for f in self.file_records:
+            if only_existing and not f.file_exists:
+                continue
+            elif len(f.tags) == 0:
+                m.append(f.path)
+        return m
+
     def build_tagged_files_map(self, only_existing=False):
         """
         Given a tag4files structure as defined by:
@@ -270,6 +279,17 @@ class TagsForFiles:
         print(f'Results written to {now_file}')
         return now_file
 
+    def make_m3u_for_untagged_files(self):
+        paths = self.get_untagged_files()
+        paths.sort()
+        if len(paths) > 0:
+            filename = Util.write_m3u_file(paths, 'playlist', header='Untaggedd files')
+            print(f'Wrote {len(paths)} files to {filename}')
+        else:
+            print('No records found.')
+        pass
+
+
     def make_m3u_for_text_match(self, term):
         """
         Writes out a m3u which matches a term (case-insensitive)
@@ -278,7 +298,7 @@ class TagsForFiles:
         paths = [f.path for f in files]
         paths.sort()
         if len(paths) > 0:
-            filename = Util.write_m3u_file(paths, 'playlist')
+            filename = Util.write_m3u_file(paths, 'playlist', header=f"Files matching: {term}")
             print(f'Wrote {len(paths)} files to {filename}')
         else:
             print('No records found.')
@@ -292,7 +312,7 @@ class TagsForFiles:
         filelist = list(self.get_matching_tagged_files(tags, only_existing=True))
         filelist.sort()
         if len(filelist) > 0:
-            filename = Util.write_m3u_file(filelist, 'playlist')
+            filename = Util.write_m3u_file(filelist, 'playlist', f"Files matching tags: {tags}")
             print(f'Wrote {len(filelist)} files to {filename}')
         else:
             print('No records found.')
@@ -571,13 +591,13 @@ class Util:
         return os.path.join(main_data_directory, file_name)
 
     @staticmethod
-    def write_m3u_file(path_list, prefix):
+    def write_m3u_file(path_list, prefix, header=""):
         m3u_filename = Util.make_time_stamped_file_name(prefix, 'm3u')
         f = open(m3u_filename, "w", encoding="utf-8")
+        print(f'# {header}', file=f)
         print('\n'.join(path_list), file=f)
         f.close()
         return m3u_filename
-        pass
 
     @staticmethod
     def transform_to_tag(text):
@@ -639,8 +659,8 @@ if __name__ == '__main__':
     text_file_path = os.path.abspath(text_file_path)
     print(f'text_file_path = {text_file_path}')
 
-    mainTagsForFilesObj = TagsForFiles(text_file_path)
-    print(f'tags file base = {mainTagsForFilesObj.get_base_directory()}')
+    mainobj = TagsForFiles(text_file_path)
+    print(f'tags file base = {mainobj.get_base_directory()}')
 
     # Data format is as follows:
     # A record consists of a sequence of non-blank lines.
@@ -654,23 +674,25 @@ if __name__ == '__main__':
     pp = pprint.PrettyPrinter(indent=2)
 
     print()
-    print(f"Read {len(mainTagsForFilesObj.file_records)} files.")
+    print(f"Read {len(mainobj.file_records)} files.")
 
     print()
-    print(f"Read {len(mainTagsForFilesObj.tags)} tags.")
+    print(f"Read {len(mainobj.tags)} tags.")
 
     print()
-    missing_files = mainTagsForFilesObj.get_missing_files()
+    missing_files = mainobj.get_missing_files()
     print(f'{len(missing_files)} Missing files.')
 
     print()
-    possible_dupes = mainTagsForFilesObj.find_duplicated_filenames()
+    possible_dupes = mainobj.find_duplicated_filenames()
     print(f'{len(possible_dupes)} Possibly-duplicated files.')
 
     print()
 
-    mainTagsForFilesObj.export()
+    mainobj.export()
 
-    mainTagsForFilesObj.find_untracked(main_data_directory, Util.media_extensions)
+    mainobj.find_untracked(main_data_directory, Util.media_extensions)
 
+
+    print(f"{mainobj=}")
 

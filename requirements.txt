@@ -1,2 +1,1 @@
 tinytag~=1.8.1
-PySimpleGUI~=4.60.5
