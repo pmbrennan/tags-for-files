@@ -475,6 +475,47 @@ class TagsForFiles:
         pass
         self.edited = True
 
+        
+    def add_tags(self, path, tags_to_add):
+        """
+        Add a given list of tags to the supplied file path.
+        Save or export required to persist the change.
+        """
+        for t in tags_to_add:
+            self.tags.add(t)
+
+        self.edited = True
+            
+        fr = None
+        for f in self.file_records:
+            if f.path == path:
+                fr = f
+
+        if fr is None:
+            fr = FileRecord(file_id=len(self.file_records), path=path, file_exists=exists(path))
+            self.file_records.append(fr)
+
+        for t in tags_to_add:
+            fr.tags.add(t)
+
+        fr.edited = True
+
+
+    def remove_tags(self, path, tags_to_remove):
+        """
+        Remove tags from a given path.
+        """
+        fr = None
+        for f in self.file_records:
+            if f.path == path:
+                fr = f
+
+        if fr is not None:
+            for t in tags_to_remove:
+                fr.tags.remove(t)
+                fr.edited = True
+
+        
     def replace_tag(self, target, replace):
         for f in self.file_records:
             if target in f.tags:
