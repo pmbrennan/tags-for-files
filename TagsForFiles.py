@@ -7,11 +7,14 @@ import os
 import pprint
 import shutil
 import sys
+import time
 from os.path import basename
 from os.path import exists
+import vlc
+import requests
+import json
+import xml.etree.ElementTree as ET
 
-import tinytag
-from tinytag import TinyTag
 
 
 # ######################################################################
@@ -304,6 +307,26 @@ class TagsForFiles:
             print('No records found.')
         pass
 
+    def play_tags(self, tags):
+        filelist = list(self.get_matching_tagged_files(tags, only_existing=True))
+        filelist.sort()
+        if len(filelist) > 0:
+            instance = vlc.Instance()
+            player = instance.media_list_player_new()
+            media_list = instance.media_list_new()
+            for item in filelist:
+                media_item = instance.media_new(item)
+                media_list.add_media(media_item)
+            player.set_media_list(media_list)
+
+            print(f"Playing {len(filelist)} files...")
+
+            player.play()
+            time.sleep(1)
+            while player.is_playing():
+                time.sleep(1)
+
+
     def make_m3u_for_tags(self, tags):
         """
         Make a m3u playlist of all the files which contain all the passed
@@ -453,14 +476,6 @@ class TagsForFiles:
         """
         self.move_if_tagged('to-archive', '.archive')
 
-    def extract_all_tags(self):
-        n_records = len(self.file_records)
-        index = 0
-        for f in self.file_records:
-            if f.file_exists:
-                new_tags = Util.extract_tags(f.path)
-                f.tags.update(new_tags)
-        pass
 
     def clean_all_tags(self):
         for f in self.file_records:
@@ -656,25 +671,26 @@ class Util:
             .replace('--', '-')
         return tag
 
-    @staticmethod
-    def extract_tags(pathname):
-        out = set()
-        try:
-            tag = TinyTag.get(pathname)
-        except tinytag.tinytag.TinyTagException as e:
-            print(f'WARNING: exception for {pathname}:')
-            print(e)
-            return out
 
-        if tag.artist is not None and len(tag.artist) > 0:
-            out.add('artist=' + Util.transform_to_tag(tag.artist))
-        if tag.year is not None and len(tag.year) > 0:
-            out.add('year=' + Util.transform_to_tag(tag.year))
-        if tag.album is not None and len(tag.album) > 0:
-            out.add('album=' + Util.transform_to_tag(tag.album))
-        if tag.title is not None and len(tag.title) > 0:
-            out.add('title=' + Util.transform_to_tag(tag.title))
-        return out
+def get_current_playing_file():
+    """
+    Queries the existing instance of VLC to determine the path of the
+    currently playing file. If VLC is not running or the file cannot
+    be found, an exception is raised.
+
+    :return: a string containing the path to the current playing file.
+    """
+    s = requests.Session()
+    try:
+        s.auth = ('', 'pmb')  # Username is blank, just provide the password
+        r = s.get('http://localhost:8080/requests/status.json', verify=False)
+    except Exception as e:
+        print(f"Failed to get current playing file: {e}")
+        return ''
+
+    j = json.loads(r.text)
+    return j['information']['category']['meta']['title']
+    return ''
 
 
 
@@ -733,6 +749,7 @@ if __name__ == '__main__':
     mainobj.export()
 
     mainobj.find_untracked(main_data_directory, Util.media_extensions)
+
 
 
     print(f"{mainobj=}")
