@@ -13,7 +13,7 @@ from os.path import exists
 import vlc
 import requests
 import json
-import xml.etree.ElementTree as ET
+from urllib.parse import unquote
 
 
 
@@ -491,7 +491,7 @@ class TagsForFiles:
         self.edited = True
 
         
-    def add_tags(self, path, tags_to_add):
+    def add_tags(self, path: str, tags_to_add: list[str]):
         """
         Add a given list of tags to the supplied file path.
         Save or export required to persist the change.
@@ -584,7 +584,7 @@ class Util:
         Compresses multiple spaces between words into single spaces.
         TODO: Add test methods for this function.
         """
-        sub_strings = list(filter(lambda c: len(c) > 0, text_to_reflow.split(' ')))
+        sub_strings = list(filter(lambda c: len(c) > 0, text_to_reflow.split()))
         out_list = []
         build = ''
         for i in range(0, len(sub_strings)):
@@ -681,16 +681,77 @@ def get_current_playing_file():
     :return: a string containing the path to the current playing file.
     """
     s = requests.Session()
+
     try:
         s.auth = ('', 'pmb')  # Username is blank, just provide the password
+        r = s.get('http://localhost:8080/requests/playlist.json', verify=False)
+        playlist_json = json.loads(r.text)
+        playlist = playlist_json['children'][0]['children']
         r = s.get('http://localhost:8080/requests/status.json', verify=False)
+        status = json.loads(r.text)
     except Exception as e:
         print(f"Failed to get current playing file: {e}")
         return ''
 
-    j = json.loads(r.text)
-    return j['information']['category']['meta']['title']
-    return ''
+    playlist_id = status['currentplid']
+    uri = ''
+
+    for entry in playlist:
+        if int(entry['id']) == playlist_id:
+            uri = entry['uri']
+            break
+
+    filename = None
+    title = None
+
+    try:
+        filename = status['information']['category']['meta']['filename']
+        title = status['information']['category']['meta']['title']
+    except Exception as e:
+        pass
+
+    print(f'{filename=}, {title=}, {uri=}')
+
+    if uri.startswith('file:///'):
+        return unquote(uri.replace('file:///', ''))
+    elif filename is not None and len(filename) > 0:
+        return filename
+    elif title is not None and len(title) > 0:
+        return title
+    else:
+        return None
+
+
+def interactive_loop(tags_for_file:TagsForFiles):
+    while (True):
+        try:
+            current_file = os.path.abspath(get_current_playing_file())
+        except Exception as e:
+            print(e)
+            current_file = None
+
+        print(f'Current playing file: `{current_file}`')
+
+        try:
+            line = input('> ').strip()
+        except:
+            line = ''
+        if line == 'quit':
+            break
+        tags = list(filter(None, [Util.transform_to_tag(s) for s in line.split()]))
+        print(f'{tags=}')
+
+        if len(tags) > 0:
+            if tags[0] == '+':
+                tags_for_file.add_tags(current_file, tags[1:])
+            if tags[0] == '-':
+                tags_for_file.remove_tags(current_file, tags[1:])
+            else:
+                tags_for_file.add_tags(current_file, tags)
+
+    if tags_for_file.edited:
+        tags_for_file.export()
+
 
 
 
@@ -750,7 +811,7 @@ if __name__ == '__main__':
 
     mainobj.find_untracked(main_data_directory, Util.media_extensions)
 
-
-
     print(f"{mainobj=}")
+    print(f"command `interactive_loop(mainobj)` to interact with mainobj directly. Changes will be exported.")
+
 
