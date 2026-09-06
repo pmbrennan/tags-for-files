@@ -710,7 +710,7 @@ def get_current_playing_file():
     except Exception as e:
         pass
 
-    print(f'{filename=}, {title=}, {uri=}')
+    # print(f'{filename=}, {title=}, {uri=}')
 
     if uri.startswith('file:///'):
         return unquote(uri.replace('file:///', ''))
@@ -725,12 +725,20 @@ def get_current_playing_file():
 def interactive_loop(tags_for_file:TagsForFiles):
     while (True):
         try:
-            current_file = os.path.abspath(get_current_playing_file())
+            current_file = get_current_playing_file()
+            if current_file is not None and len(current_file) > 0:
+                current_file = os.path.abspath(current_file)
         except Exception as e:
             print(e)
             current_file = None
 
         print(f'Current playing file: `{current_file}`')
+
+        if current_file is not None and len(current_file) > 0:
+            tags_to_list = mainobj.get_tags_from_files([current_file])
+            tags_to_list.sort()
+            listed_tags = ' '.join(tags_to_list)
+            print(f'tags = {listed_tags}')
 
         try:
             line = input('> ').strip()
